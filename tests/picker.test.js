@@ -17,7 +17,7 @@ test('Visual picker builds a reusable selector from a clicked element', async ()
     const page = await browser.newPage();
     await page.setContent(fixture);
     // Simulate the Chrome extension message bus on a fixture page.
-    await page.evaluate(() => { window.chrome.runtime = { sendMessage: message => { window.lastPick = message; } }; });
+    await page.evaluate(() => { window.chrome ||= {}; window.chrome.runtime = { sendMessage: message => { window.lastPick = message; } }; });
     await page.evaluate(({ func }) => {
       const injected = new Function(`return (${func})`)();
       injected('field', 'title', 'text');
