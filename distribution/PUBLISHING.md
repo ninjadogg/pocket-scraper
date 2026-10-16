@@ -6,14 +6,17 @@ checksums under dist/. It never includes data/, node_modules/, profiles or cooki
 The extension manifest is at the ZIP root. Server dependencies are installed by
 recipients with npm ci using the included lockfile.
 
-The ZIPs are ready for trusted testing/internal review. They have not been
-submitted to or approved by the Chrome Web Store. Before public publication:
+The GitHub beta is MIT licensed and distributed as a prerelease with ZIPs and
+SHA-256 checksums. Include LICENSE and SECURITY.md in both bundles. Verify CI
+before publishing a release from its exact commit.
+
+The extension has not been submitted to or approved by the Chrome Web Store.
+Before a separate Chrome Web Store publication:
 
 - Use your publisher account and choose visibility/distribution regions.
 - Supply listing screenshots, description, support contact and a hosted privacy
   policy URL based on PRIVACY.md. Clearly disclose the companion-server requirement.
 - Complete Chrome's privacy and permissions declarations accurately.
-- Choose the project's licensing terms before granting public redistribution rights.
 - Upload the extension ZIP, review it, and submit through the publisher dashboard.
 - Increment package, lockfile and manifest versions for subsequent releases.
 

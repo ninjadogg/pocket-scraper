@@ -1,13 +1,18 @@
 # Pocket Scraper
 
+**Public beta · v0.3.1 · MIT licensed.** For local use and evaluation; not yet a production service.
+
+[Download the beta](https://github.com/ninjadogg/pocket-scraper/releases/tag/v0.3.1) · [Install on Windows, macOS or Linux](distribution/INSTALL.md) · [Report a security issue privately](SECURITY.md)
+
 A **local, non-AI visual web scraper**: pick data fields or navigation clicks in Chrome; save a recipe; run it on demand or on a schedule; keep historical results; optionally let Claude read the results through MCP.
 
 ## Setup (macOS, Homebrew Node)
 
 ```bash
 brew install node
+git clone https://github.com/ninjadogg/pocket-scraper.git
 cd pocket-scraper
-npm install
+npm ci
 npx playwright install chromium     # one-time browser download
 npm start                           # keep this running for schedules
 ```
@@ -214,3 +219,23 @@ from memory, and the dashboard shows a storage alert. Repair the storage issue
 and rerun the recipe. A later successful save clears the alert; it does not
 recover the discarded rows. A restart may show an interrupted run because the
 failed write could not record its final status.
+
+## Beta scope and feedback
+
+The extension requires the local companion server; it is distributed as an
+unpacked extension, not a Chrome Web Store listing. Keep the server running and
+the machine awake for schedules. Saved sessions may still require interactive
+verification when a website requests it.
+
+The automated tests and packaging run on Windows, macOS and Linux. Manual
+installation and startup configuration must still be checked on your own machine.
+This beta has no global concurrency limit, overall run deadline, automatic data
+retention or damaged-store recovery. Use a small number of trusted recipes and
+back up your private data directory.
+
+Report ordinary bugs through [GitHub issues](https://github.com/ninjadogg/pocket-scraper/issues),
+including the version, OS, reproduction steps and sanitized logs. Use synthetic
+examples; never attach connection keys, cookies, profiles or private records.
+For vulnerabilities, follow [SECURITY.md](SECURITY.md).
+
+Licensed under the [MIT License](LICENSE).
