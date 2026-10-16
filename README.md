@@ -106,7 +106,7 @@ Tab captures and automated runs use the same local store, so the existing MCP to
 For Claude Code, from this project directory:
 
 ```bash
-claude mcp add --scope project pocket-scraper -- /opt/homebrew/bin/node /Users/asit/Repos/pocket-scraper/mcp.js
+claude mcp add --scope project pocket-scraper -- node "$(pwd)/mcp.js"
 ```
 
 For Claude Desktop, merge this entry into its `mcpServers` settings (preserving any other servers), then restart Claude Desktop:
@@ -115,8 +115,8 @@ For Claude Desktop, merge this entry into its `mcpServers` settings (preserving 
 {
   "mcpServers": {
     "pocket-scraper": {
-      "command": "/opt/homebrew/bin/node",
-      "args": ["/Users/asit/Repos/pocket-scraper/mcp.js"]
+      "command": "node",
+      "args": ["/absolute/path/to/pocket-scraper/mcp.js"]
     }
   }
 }
@@ -148,8 +148,9 @@ On macOS, installed Chrome is used if the bundled Chromium is missing; an explic
 `SCRAPER_BROWSER_PATH` overrides browser selection.
 
 Profiles and session cookies stay under `data/browser-profiles/` (or alongside
-`POCKET_SCRAPER_DATA`). Profile directories are owner-only; saved cookie files are
-owner-readable/writable only. Treat them as sign-in credentials: exclude them from
+`POCKET_SCRAPER_DATA`). On Unix, profile directories and saved cookie files use owner-only permissions.
+On Windows, keep the folder under your private user profile and restrict its
+Windows folder permissions; Unix permission modes do not set Windows ACLs. Treat them as sign-in credentials: exclude them from
 source control and sharing. They are not returned by the API or MCP. No cookies are
 read from the user's normal browser profile. Use the same browser installation
 for setup and unattended execution.
@@ -193,3 +194,23 @@ local server; the ZIP is not a signed Chrome installer.
 - Storage errors are exposed through authenticated `/api/health`; run locks are
   released even when saving fails. On restart, unfinished runs become interrupted.
   Repair storage and retry failed work; a failed disk cannot retain new results.
+
+## Security and compatibility
+
+See [SECURITY.md](SECURITY.md) for private vulnerability reporting, supported
+versions, and the local-machine security boundary.
+
+Windows PowerShell setup and Task Scheduler instructions are in
+[the installation guide](distribution/INSTALL.md#windows-powershell). The core
+runner uses Playwright Chromium on Windows, macOS and Linux. CI runs tests and
+packaging on all three; check the latest workflow results for verified platforms.
+The suite covers headless sessions and popup logic, not a manual extension install
+on every OS.
+
+### Persistence in 0.3.1
+
+If the final save fails, the run reports `storage_error`, unsaved rows are removed
+from memory, and the dashboard shows a storage alert. Repair the storage issue
+and rerun the recipe. A later successful save clears the alert; it does not
+recover the discarded rows. A restart may show an interrupted run because the
+failed write could not record its final status.

@@ -11,7 +11,7 @@ const tools = [
 const result = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
 function rpc(method, params = {}) {
   const db = loadStore();
-  if (method === 'initialize') return { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pocket-scraper', version: '0.3.0' } };
+  if (method === 'initialize') return { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'pocket-scraper', version: '0.3.1' } };
   if (method === 'ping') return {};
   if (method === 'tools/list') return { tools };
   if (method === 'tools/call') {

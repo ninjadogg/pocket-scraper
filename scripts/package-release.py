@@ -24,9 +24,9 @@ for name in EXT:
     if name.endswith(('.js', '.html')):
         for ref in re.findall(r'''(?:from\s+|src=)["']([^"']+)["']''', source.read_text()):
             assert ref.removeprefix('./') in EXT, f'Unpackaged dependency: {ref}'
-SERVER = ['package.json', 'package-lock.json', 'README.md', 'server.js', 'runner.js',
+SERVER = ['package.json', 'package-lock.json', 'README.md', 'SECURITY.md', 'server.js', 'runner.js',
           'auth.js', 'browser-session.js', 'store.js', 'capture.js', 'mcp.js', 'dashboard.html',
-          'scripts/package-release.py', 'distribution/INSTALL.md',
+          'scripts/package-release.py', 'scripts/package-release.js', 'distribution/INSTALL.md',
           'distribution/PRIVACY.md', 'distribution/PUBLISHING.md']
 SERVER += ['tests/' + name for name in ['fixture.html', 'adversarial.test.js', 'capture.test.js', 'picker.test.js',
            'scraper.test.js', 'session.test.js', 'session-api.test.js', 'workflow-popup.test.js']]
@@ -53,6 +53,7 @@ def build(name, entries):
 
 ext = {name: 'extension/' + name for name in EXT}
 ext['PRIVACY.md'] = 'distribution/PRIVACY.md'
+ext['SECURITY.md'] = 'SECURITY.md'
 checksums = build(f'pocket-scraper-extension-{version}.zip', ext)
 checksums += build(f'pocket-scraper-server-{version}.zip', {name: name for name in SERVER})
 (OUT / 'SHA256SUMS.txt').write_text(checksums)

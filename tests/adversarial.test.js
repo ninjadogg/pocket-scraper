@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -87,4 +87,77 @@ test('API authenticates clients, preserves split UTF-8, exports safe CSV, surviv
     const saved=await post('/api/recipes',{...recipe,name:'Storage recovered'});
     assert.equal(saved.status,200);assert.equal((await get('/api/health')).ok,true);
   } finally {const done=once(server,'close');server.kill();await done;rmSync(dir,{recursive:true,force:true});}
+});
+
+test('final-save failure discards unsaved rows, alerts the dashboard, and allows a durable retry', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pocket-final-save-'));
+  const data = join(dir, 'store.json');
+  let server, browser, failSave = true;
+  const site = http.createServer((req, res) => {
+    if (failSave) mkdirSync(`${data}.${server.pid}.tmp`, { recursive: true });
+    res.setHeader('Content-Type', 'text/html');
+    res.end('<h1>Durable record</h1>');
+  });
+  await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
+  try {
+    server = spawn(process.execPath, ['server.js'], { cwd: new URL('../', import.meta.url), env: { ...process.env, PORT: '0', POCKET_SCRAPER_DATA: data, POCKET_SCRAPER_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] });
+    server.stderr.resume();
+    const base = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(Error('Startup timeout')), 10000);
+      server.once('error', reject);
+      server.stdout.on('data', chunk => {
+        const match = String(chunk).match(/http:\/\/127\.0\.0\.1:\d+/);
+        if (match) { clearTimeout(timer); resolve(match[0]); }
+      });
+    });
+    const api = async (path, input) => {
+      const response = await fetch(base + path, { headers: { ...auth, 'Content-Type': 'application/json' }, method: input ? 'POST' : 'GET', ...(input ? { body: JSON.stringify(input) } : {}) });
+      assert.ok(response.ok);
+      return response.json();
+    };
+    const waitForRun = async () => {
+      for (let i = 0; i < 300; i++) {
+        const [run] = await api('/api/runs');
+        if (run && run.status !== 'running') return run;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      throw Error('Run did not finish');
+    };
+    const recipe = await api('/api/recipes', { name: 'Final save', url: `http://127.0.0.1:${site.address().port}`, fields: [{ name: 'title', selector: 'h1' }] });
+    await api('/api/run/' + recipe.id, {});
+    const failed = await waitForRun();
+    assert.equal(failed.status, 'storage_error');
+    assert.match(failed.error, /Results were not saved/);
+    assert.equal(failed.newCount, 0);
+    assert.deepEqual(await api('/api/records'), []);
+    assert.equal(JSON.parse(readFileSync(data, 'utf8')).records.length, 0);
+    const health = await api('/api/health');
+    assert.equal(health.ok, false);
+    assert.deepEqual(health.running, []);
+
+    browser = await chromium.launch({ headless: true, ...(process.env.SCRAPER_BROWSER_PATH ? { executablePath: process.env.SCRAPER_BROWSER_PATH } : {}) });
+    const page = await browser.newPage();
+    await page.goto(base);
+    await page.locator('#storageError').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#storageError').textContent(), /Results may not be saved/);
+
+    failSave = false;
+    rmSync(`${data}.${server.pid}.tmp`, { recursive: true });
+    await api('/api/recipes', recipe);
+    await page.reload();
+    await page.waitForFunction(() => document.querySelector('#recipes table'));
+    assert.equal(await page.locator('#storageError').isHidden(), true);
+    assert.equal(JSON.parse(readFileSync(data, 'utf8')).runs[0].status, 'storage_error');
+    await api('/api/run/' + recipe.id, {});
+    const succeeded = await waitForRun();
+    assert.equal(succeeded.status, 'success');
+    assert.equal(succeeded.newCount, 1, 'unsaved rows must not prevent retry deduplication');
+    assert.equal((await api('/api/records')).length, 1);
+    assert.equal(JSON.parse(readFileSync(data, 'utf8')).records.length, 1);
+  } finally {
+    if (browser) await browser.close();
+    if (server) { const done = once(server, 'close'); server.kill(); await done; }
+    await new Promise(resolve => site.close(resolve));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

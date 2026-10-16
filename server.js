@@ -66,7 +66,15 @@ async function run(recipe) {
     // Respect any schedule changes made while this run was executing.
     const latest = store.recipes.find(r => r.id === recipe.id);
     if (latest?.scheduleMinutes) latest.nextRunAt = new Date(Date.now() + latest.scheduleMinutes * 60_000).toISOString();
-    try { persist(); } catch (error) { console.error('Run persistence failed:', error.message); }
+    try { persist(); } catch (error) {
+      // Do not expose or deduplicate against records that were never saved.
+      // Keep other runs' records, including ones added while this scrape awaited.
+      store.records = store.records.filter(record => record.runId !== runRecord.id);
+      runRecord.status = 'storage_error';
+      runRecord.newCount = 0;
+      runRecord.error = `${runRecord.error ? runRecord.error + ' ' : ''}Results were not saved: ${error.message}. Repair local storage and rerun this recipe.`;
+      console.error('Run persistence failed:', error.message);
+    }
     finally { running.delete(recipe.id); }
   }
   return runRecord;
