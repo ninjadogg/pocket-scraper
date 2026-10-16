@@ -79,6 +79,10 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${HOST}:${PORT}`);
     const p = url.pathname;
+    if (p === '/favicon.png' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-cache' });
+      return res.end(readFileSync(join(ROOT, 'extension', 'icons', 'icon-32.png')));
+    }
     if (p === '/' && req.method === 'GET') {
       return send(res, 200, readFileSync(join(ROOT, 'dashboard.html'), 'utf8'), 'text/html');
     }

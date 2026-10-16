@@ -1,4 +1,4 @@
-# Pocket Scraper 0.2.0
+# Pocket Scraper 0.2.1
 
 Pocket Scraper includes a Chrome extension and a local Node.js companion server.
 The extension alone cannot save recipes, store results, or run schedules.
@@ -6,7 +6,7 @@ The extension alone cannot save recipes, store results, or run schedules.
 ## Install the companion server
 
 1. Install Node.js 20 or newer (with npm) from https://nodejs.org/.
-2. Extract `pocket-scraper-server-0.2.0.zip` to a permanent folder.
+2. Extract `pocket-scraper-server-0.2.1.zip` to a permanent folder.
 3. In a terminal in that folder, run:
 
    ```sh
@@ -21,7 +21,7 @@ The extension alone cannot save recipes, store results, or run schedules.
 
 ## Install the extension for testing or internal review
 
-1. Extract `pocket-scraper-extension-0.2.0.zip` to a permanent folder.
+1. Extract `pocket-scraper-extension-0.2.1.zip` to a permanent folder.
 2. Open `chrome://extensions` in Chrome and enable Developer mode.
 3. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
 4. Pin Pocket Scraper from Chrome's Extensions menu.
