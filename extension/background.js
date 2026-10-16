@@ -1,3 +1,5 @@
+import { api } from './api.js';
+void chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
 import { captureFields } from './capture.js';
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'PICK_RESULT') return;
@@ -9,6 +11,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const field = { name, selector: message.selector, kind: message.kind || 'text' };
       if (existing >= 0) draft.fields[existing] = field;
       else draft.fields.push(field);
+    } else if (message.mode === 'row') {
+      draft.rowSelector = message.selector;
     } else if (message.mode === 'action') {
       if (draft.steps) draft.steps.push({ type: 'click', selector: message.selector, waitMs: 700 });
       else {
@@ -31,15 +35,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const recipe = message.recipe;
     const [capture] = await chrome.scripting.executeScript({ target: { tabId: message.tabId }, func: captureFields,
-      args: [recipe.fields, new URL(recipe.url).origin] });
+      args: [{ fields: recipe.fields, expectedOrigin: new URL(recipe.url).origin, rowSelector: recipe.rowSelector, serialize: true }] });
     if (!capture?.result) throw new Error('Could not read this page. Reopen the extension on the website and try again.');
-    const payload = JSON.stringify(capture.result);
+    const payload = capture.result;
     if (new TextEncoder().encode(payload).length > 2_000_000) throw new Error('Capture is too large. Select fewer fields or a smaller page section.');
-    const response = await fetch('http://127.0.0.1:3888/api/capture/' + encodeURIComponent(recipe.id), {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload
-    });
-    const run = await response.json();
-    if (!response.ok) throw new Error(run.error || 'Could not save capture');
+    const run = await api('/api/capture/' + encodeURIComponent(recipe.id), { method: 'POST', body: payload });
     return { run };
   })().then(sendResponse).catch(error => sendResponse({ error: error.message }));
   return true;

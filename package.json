@@ -1,6 +1,6 @@
 {
   "name": "pocket-scraper",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Visual selector scraping with local scheduling and MCP. No AI dependency.",

@@ -11,15 +11,20 @@ test('popup configures, reorders, saves, and reloads a workflow', async () => {
     await page.addInitScript(() => {
       window.chrome = {
         storage: { local: {
-          async get() { return { draft: JSON.parse(localStorage.getItem('draft') || 'null') || {
+          async get(key) { if(key === 'connectionKey') return { connectionKey: 'a'.repeat(64) }; return { draft: JSON.parse(localStorage.getItem('draft') || 'null') || {
             name: 'Popup test', url: 'https://example.org', fields: [{ name: 'title', selector: 'h1', kind: 'text' }], actions: []
           } }; },
-          async set({ draft }) { localStorage.setItem('draft', JSON.stringify(draft)); }
+          async set({ draft }) { if(draft !== undefined) localStorage.setItem('draft', JSON.stringify(draft)); }
         } },
         tabs: { async query() { return [{ id: 1, url: 'https://example.org' }]; } }
       };
     });
     let saved;
+    let paired = false;
+    await page.route('http://127.0.0.1:3888/api/pair', async route => {
+      assert.equal(route.request().headers().authorization, 'Bearer ' + 'a'.repeat(64)); paired = true;
+      await route.fulfill({ json: { ok: true } });
+    });
     await page.route('http://127.0.0.1:3888/api/recipes', async route => {
       if (route.request().method() === 'POST') saved = { ...route.request().postDataJSON(), id: 'saved-workflow' };
       await route.fulfill({ json: route.request().method() === 'POST' ? saved : saved ? [saved] : [] });
@@ -31,6 +36,12 @@ test('popup configures, reorders, saves, and reloads a workflow', async () => {
     await page.goto('http://127.0.0.1:3888/extension/popup.html');
     await page.locator('#name').waitFor();
     await page.waitForFunction(() => document.querySelector('#name').value === 'Popup test');
+    await page.locator('summary').click();
+    await page.locator('#connectionKey').fill('a'.repeat(64));
+    await page.locator('#connect').click();
+    await page.waitForFunction(() => document.querySelector('#message').textContent.startsWith('Connected.'));
+    assert.equal(paired, true);
+    await page.locator('#rowSelector').fill('article');
     await page.locator('#workflow').selectOption('steps');
     await page.locator('#addWait').click();
     await page.locator('#steps .item').nth(1).getByRole('button', { name: 'Move up' }).click();
@@ -40,6 +51,7 @@ test('popup configures, reorders, saves, and reloads a workflow', async () => {
     await page.waitForFunction(() => document.querySelector('#message').textContent.startsWith('Saved.'));
     assert.deepEqual(saved.steps, [{ type: 'wait', waitMs: 250 }, { type: 'extract' }]);
     assert.equal(saved.repeatCount, 3);
+    assert.equal(saved.rowSelector, 'article');
     assert.equal(await page.locator('#pickNext').isDisabled(), true);
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#workflow').value === 'steps');

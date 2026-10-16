@@ -21,7 +21,7 @@ test('session failures pause schedules; a saved session works after service rest
   });
   await new Promise(resolve => source.listen(0, '127.0.0.1', resolve));
   const start = async () => {
-    child = spawn(process.execPath, ['server.js'], { cwd: new URL('../', import.meta.url), env: { ...process.env, PORT: '0', POCKET_SCRAPER_DATA: join(dir, 'store.json') }, stdio: ['ignore', 'pipe', 'ignore'] });
+    child = spawn(process.execPath, ['server.js'], { cwd: new URL('../', import.meta.url), env: { ...process.env, PORT: '0', POCKET_SCRAPER_TOKEN: 'a'.repeat(64), POCKET_SCRAPER_DATA: join(dir, 'store.json') }, stdio: ['ignore', 'pipe', 'ignore'] });
     base = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Startup timeout')), 5000);
       child.on('error', reject);
@@ -29,8 +29,8 @@ test('session failures pause schedules; a saved session works after service rest
     });
   };
   const stop = async () => { if (child) { const done = once(child, 'close'); child.kill(); await done; child = null; } };
-  const post = async (path, data) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data || {}) });
-  const get = async path => (await fetch(base + path)).json();
+  const post = async (path, data) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + 'a'.repeat(64) }, body: JSON.stringify(data || {}) });
+  const get = async path => (await fetch(base + path, { headers: { Authorization: 'Bearer ' + 'a'.repeat(64) } })).json();
   const waitFor = async predicate => {
     const deadline = Date.now() + 20000;
     while (Date.now() < deadline) { const value = await predicate(); if (value) return value; await new Promise(resolve => setTimeout(resolve, 100)); }

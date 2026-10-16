@@ -14,7 +14,7 @@ export function loadStore() {
 export function saveStore(store) {
   mkdirSync(dirname(DATA_PATH), { recursive: true });
   const tmp = `${DATA_PATH}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(store, null, 2));
+  writeFileSync(tmp, JSON.stringify(store, null, 2), { mode: 0o600 });
   renameSync(tmp, DATA_PATH);
 }
 
@@ -32,6 +32,7 @@ export function normalizeRecipe(input, old) {
       selector: String(a.selector || '').trim().slice(0, 500),
       waitMs: Math.min(5000, Math.max(0, Number(a.waitMs) || 700))
     })),
+    rowSelector: String(input.rowSelector || '').trim().slice(0, 500),
     nextSelector: String(input.nextSelector || '').trim().slice(0, 500),
     maxPages: Math.min(30, Math.max(1, Number(input.maxPages) || 1)),
     scheduleMinutes: Math.min(43200, Math.max(0, Number(input.scheduleMinutes) || 0)),

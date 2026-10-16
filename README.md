@@ -12,18 +12,18 @@ npx playwright install chromium     # one-time browser download
 npm start                           # keep this running for schedules
 ```
 
-Open **http://127.0.0.1:3888** to see results.
+Open **http://127.0.0.1:3888** to see results. Expand **Connect the Chrome extension**, copy the connection key, and paste it into the extension’s **Connect to local server** section once. API clients must send `Authorization: Bearer <connection-key>`; keep the key private.
 
 ### Enable Chrome picker
 
 1. Open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked**, then choose this project's **`extension/`** folder.
 3. Open a website to collect. Click the Pocket Scraper extension icon (pin it for easy access).
-4. Give the recipe a name. Type a field name, e.g. `title`, choose **Text** or **Link**, click **Pick field**, and then click the matching element on the actual webpage. Reopen the extension to add additional fields.
+4. Use **Pick record container** to select one repeated card, list item, or table row, then pick fields inside that container. Give the recipe a name. Type a field name, e.g. `title`, choose **Text** or **Link**, click **Pick field**, and then click the matching element on the actual webpage. Reopen the extension to add additional fields.
 5. For navigation, **Record click** selects a button to click before extraction. **Pick Next** selects a next-page link and defaults the cap to 5 pages (requires URL-changing pagination). Review or edit the generated CSS selectors in the popup.
 6. Choose a schedule and click **Save & run now**. Check results in the dashboard.
 
-**Important:** Extraction collects *all elements matching each CSS selector* and pairs the Nth result of each field. For best results, pick similarly repeated fields and verify the displayed CSS selectors; you can edit them directly. It does not automatically infer the card/row structure.
+**Record association:** With a record container, each matching container produces one row. Missing fields stay blank in that record; multiple matches within one field are joined with newlines. Field selectors are relative to the container. Legacy recipes without a container reject unequal field counts; equal counts produce a warning because they cannot guarantee correct association. Re-pick fields after changing the record container.
 
 ## Scheduling
 
@@ -42,7 +42,7 @@ Data is written to `data/store.json` (local file; not a database server). Keep t
 - `GET /api/records?recipeId=...&limit=100` — collected rows
 - `GET /api/export/:recipeId.csv` — CSV output
 
-Server listens only on `127.0.0.1:3888`. It has no authentication; **don't bind it to a public interface**. The extension has active-tab scripting permission and localhost access, not persistent access to every site.
+Server listens only on `127.0.0.1:3888`. API access requires a local connection key; **don't bind it to a public interface**. The dashboard only exposes its connection key on same-site top-level navigation. Pairing authorizes the extension origin as well as its key. The extension has active-tab scripting permission and localhost access, not persistent access to every site.
 
 ### Claude MCP (read-only, optional)
 
@@ -58,7 +58,7 @@ Tools exposed: `list_scraper_recipes`, `read_scraped_records`, `read_scraper_run
 
 ## Limitations / next step
 
-- This MVP does not automatically solve CAPTCHAs or bot-blocking, and does not handle scrolling, infinite scroll, `iframe` elements, row-level association, or automatic detection of the end of in-place pagination. Multi-step workflows can replay a fixed number of in-place updates.
+- This MVP does not automatically solve CAPTCHAs or bot-blocking, and does not handle scrolling, infinite scroll, `iframe` elements, automatic detection of the end of in-place pagination. Multi-step workflows can replay a fixed number of in-place updates.
 - CSS selectors are deterministic but **fragile when websites redesign**. Watch zero-match warnings and run failures in the dashboard.
 - Runs use a fresh browser until you enable saved sessions through dashboard session setup. Saved sessions reuse a dedicated profile; your everyday Chrome profile is never used.
 - Historical data is a simple JSON store; for hundreds of sources or millions of records, replace storage with SQLite/PostgreSQL and add per-site throttling/queues.
@@ -84,7 +84,7 @@ In the extension, choose **Execution mode → Multi-step workflow** after choosi
 
 For example, arrange **Extract → Click Next → Wait 1000 ms**, and repeat 3 times to collect three states of a list. This also works when Next updates content without changing the URL. Use a repeat count appropriate for the available pages; a missing or disabled click target fails the run with the repeat and step number. Results are saved after the full workflow succeeds.
 
-Every Extract uses the same selected fields. Fields are still paired by position. In workflow mode, the ordered steps replace the old pre-extraction clicks and automatic next-page loop; Maximum pages and Pick Next do not apply. Switching back to the original mode restores the original click/page configuration. Existing saved recipes continue to run as before.
+Every Extract uses the same selected fields. Record containers associate fields within each card; legacy positional recipes are checked for mismatched counts. In workflow mode, the ordered steps replace the old pre-extraction clicks and automatic next-page loop; Maximum pages and Pick Next do not apply. Switching back to the original mode restores the original click/page configuration. Existing saved recipes continue to run as before.
 
 After updating the extension, reload it from Chrome's extensions page and restart the local server to use the new workflow support.
 
@@ -174,3 +174,22 @@ The extension ZIP has its Manifest V3 manifest at the root. See
 [publishing notes](distribution/PUBLISHING.md) for trusted testing and the separate
 Chrome Web Store publication process. Recipients need both the extension and the
 local server; the ZIP is not a signed Chrome installer.
+
+## Hardening in 0.3.0
+
+- Pair the extension once using the local dashboard connection key. Requests must
+  use the exact loopback host and port. Unpaired extension origins are rejected.
+  The connection key is stored in an owner-only `.api-auth.json` alongside the
+  store; never share it. Local CLI clients may read that file to authenticate.
+- Pick a record container to keep related fields together. Invalid legacy
+  alignment fails visibly. Existing historical records are retained unchanged;
+  results collected before this fix may contain positional pairing errors.
+- Empty runs fail; document HTTP errors reached through clicks or pagination
+  fail instead of being saved as content. Workflow snapshots with no values are
+  warned about when other snapshots in that run yielded records.
+- CSV exports prefix formula-like cells with a tab for safer spreadsheet opening.
+  This changes the CSV representation; API/MCP JSON preserves original values.
+  Spreadsheet behavior varies, so retain JSON for lossless interchange.
+- Storage errors are exposed through authenticated `/api/health`; run locks are
+  released even when saving fails. On restart, unfinished runs become interrupted.
+  Repair storage and retry failed work; a failed disk cannot retain new results.

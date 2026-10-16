@@ -1,15 +1,9 @@
+import { api, API } from './api.js';
 import { installPicker } from './picker.js';
 const $ = id => document.getElementById(id);
-const API = 'http://127.0.0.1:3888';
 let draft = { fields: [], actions: [], maxPages: 1, scheduleMinutes: 0 };
 let recipes = [];
 const message = txt => { $('message').textContent = txt; };
-async function api(path, options = {}) {
-  const res = await fetch(API + path, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-  return data;
-}
 function el(tag, content, attrs = {}) {
   const node = document.createElement(tag);
   if (content !== undefined) node.textContent = content;
@@ -18,6 +12,7 @@ function el(tag, content, attrs = {}) {
 }
 function inputsToDraft() {
   if (draft.steps) draft.repeatCount = Number($('repeatCount').value);
+  draft.rowSelector = $('rowSelector').value;
   draft.name = $('name').value;
   draft.url = $('url').value;
   draft.maxPages = Number($('maxPages').value) || 1;
@@ -25,6 +20,7 @@ function inputsToDraft() {
 }
 async function persist() { inputsToDraft(); await chrome.storage.local.set({ draft }); }
 function showDraft() {
+  $('rowSelector').value = draft.rowSelector || '';
   $('name').value = draft.name || '';
   $('url').value = draft.url || '';
   $('maxPages').value = draft.maxPages || 1;
@@ -103,7 +99,7 @@ async function pick(mode) {
     if (!tab?.id || !/^https?:\/\//.test(tab.url || '')) throw new Error('Open an HTTP(S) website tab first.');
     const fieldName = $('fieldName').value || `field_${draft.fields.length + 1}`;
     const kind = $('kind').value;
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: installPicker, args: [mode, fieldName, kind] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: installPicker, args: [mode, fieldName, kind, draft.rowSelector] });
     message('Now click the element in the webpage.');
   } catch (e) { message('Error: ' + e.message); }
 }
@@ -131,6 +127,20 @@ $('workflow').onchange = async () => {
 $('addWait').onclick = async () => { draft.steps.push({ type: 'wait', waitMs: 1000 }); await persist(); showDraft(); };
 $('addExtract').onclick = async () => { draft.steps.push({ type: 'extract' }); await persist(); showDraft(); };
 $('repeatCount').onchange = () => void persist();
+$('connect').onclick = async () => {
+  try {
+    const key = $('connectionKey').value.trim();
+    if (!/^[a-f0-9]{64}$/.test(key)) throw new Error('Paste the complete connection key from the dashboard.');
+    const response = await fetch(API + '/api/pair', { method: 'POST', headers: { Authorization: 'Bearer ' + key } });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    await chrome.storage.local.set({ connectionKey: key });
+    $('connectionKey').value = '';
+    await listRecipes(); message('Connected. Select a saved recipe or create one.');
+  } catch (error) { message('Error: ' + error.message); }
+};
+$('pickRow').onclick = () => pick('row');
+$('rowSelector').onchange = () => void persist();
 $('pickField').onclick = () => pick('field');
 $('pickAction').onclick = () => pick('action');
 $('pickNext').onclick = () => pick('next');
@@ -146,6 +156,7 @@ $('capture').onclick = async () => {
     const recipe = await save();
     message('Collecting fields from this Chrome tab…');
     const result = await chrome.runtime.sendMessage({ type: 'CAPTURE_TAB', tabId: tab.id, recipe });
+    if (!result) throw new Error('Reload Pocket Scraper on chrome://extensions and reopen the popup.');
     if (result.error) throw new Error(result.error);
     if (result.run.status === 'error') throw new Error(result.run.error);
     message(`Collected ${result.run.rowCount} rows (${result.run.newCount} new). ${result.run.warnings.join(' ')} Open Results to view them.`);

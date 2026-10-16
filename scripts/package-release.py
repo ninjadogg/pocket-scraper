@@ -14,7 +14,7 @@ assert manifest['manifest_version'] == 3
 assert json.loads((ROOT / 'package.json').read_text())['version'] == version
 lock = json.loads((ROOT / 'package-lock.json').read_text())
 assert lock['version'] == lock['packages']['']['version'] == version
-EXT = ['manifest.json', 'background.js', 'capture.js', 'picker.js', 'popup.js', 'popup.html']
+EXT = ['manifest.json', 'background.js', 'api.js', 'extract.js', 'capture.js', 'picker.js', 'popup.js', 'popup.html']
 EXT += [f'icons/icon-{size}.png' for size in [16, 32, 48, 128]]
 for ref in [manifest['background']['service_worker'], manifest['action']['default_popup'], *manifest['icons'].values(), *manifest['action']['default_icon'].values()]:
     assert ref in EXT, f'Missing manifest resource: {ref}'
@@ -25,10 +25,10 @@ for name in EXT:
         for ref in re.findall(r'''(?:from\s+|src=)["']([^"']+)["']''', source.read_text()):
             assert ref.removeprefix('./') in EXT, f'Unpackaged dependency: {ref}'
 SERVER = ['package.json', 'package-lock.json', 'README.md', 'server.js', 'runner.js',
-          'browser-session.js', 'store.js', 'capture.js', 'mcp.js', 'dashboard.html',
+          'auth.js', 'browser-session.js', 'store.js', 'capture.js', 'mcp.js', 'dashboard.html',
           'scripts/package-release.py', 'distribution/INSTALL.md',
           'distribution/PRIVACY.md', 'distribution/PUBLISHING.md']
-SERVER += ['tests/' + name for name in ['fixture.html', 'capture.test.js', 'picker.test.js',
+SERVER += ['tests/' + name for name in ['fixture.html', 'adversarial.test.js', 'capture.test.js', 'picker.test.js',
            'scraper.test.js', 'session.test.js', 'session-api.test.js', 'workflow-popup.test.js']]
 SERVER += ['extension/' + name for name in EXT]
 OUT = ROOT / 'dist'

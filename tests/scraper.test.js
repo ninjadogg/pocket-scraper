@@ -12,7 +12,7 @@ const fixture = readFileSync(join(root, 'fixture.html'), 'utf8');
 test('CSS extraction, recorded click, link URLs, deduplication', async () => {
   try {
     const url = 'https://example.org';
-    const recipe = normalizeRecipe({ name: 'Fixture', url,
+    const recipe = normalizeRecipe({ name: 'Fixture', url, rowSelector: 'li',
       fields: [{ name: 'title', selector: 'a.job', kind: 'text' }, { name: 'url', selector: 'a.job', kind: 'href' }, { name: 'location', selector: '.location', kind: 'text' }],
       actions: [{ selector: '#show-more', waitMs: 50 }] });
     const { rows, warnings } = await scrape(recipe, { fixtureHtml: fixture });
@@ -50,7 +50,7 @@ test('workflow supports multiple extraction points and identifies empty fields',
     steps: [{ type: 'extract' }, { type: 'click', selector: '#change', waitMs: 0 }, { type: 'extract' }] });
   const result = await scrape(recipe, { fixtureHtml: `<span id="value">Before</span><button id="change" onclick="document.querySelector('#value').remove()">Remove</button>` });
   assert.deepEqual(result.rows.map(row => row.fields.value), ['Before']);
-  assert.deepEqual(result.warnings, ['Repeat 1, step 3 (extract): no matches for value']);
+  assert.deepEqual(result.warnings, ['Repeat 1, step 3 (extract): no nonempty records']);
 });
 
 test('workflow validation rejects malformed and unbounded sequences', () => {

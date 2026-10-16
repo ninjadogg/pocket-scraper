@@ -1,8 +1,9 @@
 // Injected only after clicking a picker button in the extension popup.
 // Entirely deterministic: creates a CSS selector from the clicked DOM element.
-export function installPicker(mode, fieldName, kind) {
+export function installPicker(mode, fieldName, kind, rowSelector = '') {
   if (window.__pocketScraperCleanup) window.__pocketScraperCleanup();
   let hovered = null;
+  let selectionRoot = document;
   const banner = document.createElement('div');
   banner.textContent = `Pocket Scraper: click an element to select ${mode}; ESC to cancel`;
   Object.assign(banner.style, {
@@ -12,7 +13,7 @@ export function installPicker(mode, fieldName, kind) {
     pointerEvents: 'none'
   });
   document.documentElement.append(banner);
-  function safeCount(sel) { try { return document.querySelectorAll(sel).length; } catch { return 0; } }
+  function safeCount(sel) { try { return selectionRoot.querySelectorAll(sel).length; } catch { return 0; } }
   function pickSelector(el, unique) {
     const clean = s => CSS.escape(s);
     if (unique && el.id && !/\d{5,}/.test(el.id)) return `#${clean(el.id)}`;
@@ -33,7 +34,7 @@ export function installPicker(mode, fieldName, kind) {
       if (exact) return exact;
     }
     const parts = [];
-    for (let node = el; node && node.nodeType === 1 && parts.length < 12; node = node.parentElement) {
+    for (let node = el; node && node !== selectionRoot && node.nodeType === 1 && parts.length < 12; node = node.parentElement) {
       let item = node.tagName.toLowerCase();
       if (node.id && !/\d{5,}/.test(node.id)) {
         parts.unshift(`#${clean(node.id)}`);
@@ -59,6 +60,7 @@ export function installPicker(mode, fieldName, kind) {
   function target(e) {
     let t = e.target;
     if (!(t instanceof Element)) return null;
+    if (mode === 'row') return t.closest('article,li,tr') || t;
     if (kind === 'href') t = t.closest('a[href]') || t;
     if (mode === 'action' || mode === 'next') t = t.closest('a,button,[role="button"],input[type="submit"]') || t;
     return t;
@@ -77,7 +79,11 @@ export function installPicker(mode, fieldName, kind) {
     const el = target(e);
     if (!el) return;
     e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-    const selector = pickSelector(el, mode !== 'field');
+    if (mode === 'field' && rowSelector) {
+      try { selectionRoot = el.closest(rowSelector); } catch { selectionRoot = null; }
+      if (!selectionRoot) { banner.textContent = 'Click a field inside the selected record container.'; return; }
+    }
+    const selector = pickSelector(el, mode !== 'field' && mode !== 'row');
     const matches = safeCount(selector);
     cleanup();
     chrome.runtime.sendMessage({ type: 'PICK_RESULT', mode, selector, matches, fieldName, kind });

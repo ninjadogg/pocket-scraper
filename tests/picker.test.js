@@ -28,5 +28,14 @@ test('Visual picker builds a reusable selector from a clicked element', async ()
     assert.equal(pick.fieldName, 'title');
     assert.equal(pick.matches, 2);
     assert.match(pick.selector, /a.*job/);
+    await page.evaluate(({ func }) => new Function(`return (${func})`)()('row', '', 'text'), { func: installPicker.toString() });
+    await page.locator('li').first().click();
+    const row = await page.evaluate(() => window.lastPick);
+    assert.equal(row.mode, 'row'); assert.equal(row.selector, 'li'); assert.equal(row.matches, 2);
+    await page.evaluate(({ func }) => new Function(`return (${func})`)()('field', 'location', 'text', 'li'), { func: installPicker.toString() });
+    await page.locator('.location').nth(1).click();
+    const scoped = await page.evaluate(() => window.lastPick);
+    assert.equal(scoped.selector, 'span.location'); assert.equal(scoped.matches, 1);
+
   } finally { await browser.close(); }
 });

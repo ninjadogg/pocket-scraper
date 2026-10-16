@@ -1,3 +1,4 @@
+import { extractFields } from './extension/extract.js';
 import { chromium } from 'playwright';
 import { acquireSession, unattendedOptions } from './browser-session.js';
 
@@ -20,16 +21,25 @@ export async function scrape(recipe, opts = {}) {
     context ||= await browser.newContext();
     const page = await context.newPage();
     page.setDefaultTimeout(timeout);
+    let documentStatus = 200;
+    page.on('response', response => {
+      if (response.request().isNavigationRequest() && response.frame() === page.mainFrame()) documentStatus = response.status();
+    });
+    function checkStatus() {
+      if (documentStatus >= 400) throw Object.assign(new Error(`Website returned HTTP ${documentStatus}. The scraper session is separate from your Chrome tab; complete session setup for access failures.`), { code: [401, 403, 429].includes(documentStatus) ? 'SESSION_ATTENTION' : 'HTTP_ERROR' });
+    }
+
     if (opts.fixtureHtml) {
       // Offline integration tests can exercise the real browser without network access.
       await page.setContent(`<base href="${recipe.url}">` + opts.fixtureHtml);
     } else {
       const response = await page.goto(recipe.url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      if (response && !response.ok()) {
-        throw Object.assign(new Error(`Website returned HTTP ${response.status()} at ${new URL(page.url()).origin}. ${[401, 403, 429].includes(response.status()) ? (recipe.useBrowserSession ? 'Saved session needs attention. Open session setup in the dashboard, complete sign-in or verification, then finish setup and retry.' : 'Access was denied or rate-limited; the site may require sign-in or browser verification. The scraper uses a fresh browser session, separate from your Chrome tab.') : 'The requested page could not be loaded.'}`), { code: [401, 403, 429].includes(response.status()) ? 'SESSION_ATTENTION' : 'HTTP_ERROR' });
-      }
+      if (response) documentStatus = response.status();
+      checkStatus();
     }
     async function extract(label) {
+      await page.waitForLoadState('domcontentloaded');
+      checkStatus();
       const challenge = await page.evaluate(() => {
         const title = document.title.trim();
         const text = document.body?.innerText || '';
@@ -37,24 +47,17 @@ export async function scrape(recipe, opts = {}) {
           /cloudflare|verify you are human|verifies you are not a bot|security verification/i.test(text);
       });
       if (challenge) throw Object.assign(new Error('Website is showing browser security verification instead of the requested content. Open session setup in the dashboard, complete verification, then finish setup and retry.'), { code: 'SESSION_ATTENTION' });
-      const columns = {};
-      for (const field of recipe.fields) {
-        columns[field.name] = await page.locator(field.selector).evaluateAll((elements, kind) =>
-          elements.map(el => {
-            if (kind === 'href') return el.href || el.getAttribute('href') || '';
-            if (kind === 'html') return el.innerHTML.trim();
-            if (kind === 'value') return el.value ?? el.getAttribute('value') ?? '';
-            return (el.innerText || el.textContent || '').trim();
-          }), field.kind);
-        if (!columns[field.name].length) warnings.push(`${label}: no matches for ${field.name}`);
-      }
-      const count = Math.max(0, ...Object.values(columns).map(a => a.length));
-      for (let i = 0; i < count; i++) {
-        const fields = Object.fromEntries(recipe.fields.map(f => [f.name, columns[f.name][i] ?? '']));
-        if (Object.values(fields).every(x => !x)) continue;
-        rows.push({ pageUrl: page.url(), fields });
-      }
+      const output = JSON.parse(await page.evaluate(extractFields, { fields: recipe.fields, rowSelector: recipe.rowSelector, serialize: true }));
+      warnings.push(...output.warnings.map(w => `${label}: ${w}`));
+      if (!output.rows.length) warnings.push(`${label}: no nonempty records`);
+      rows.push(...output.rows);
+      if (rows.length > 5000 || Buffer.byteLength(JSON.stringify(rows)) > 2_000_000) throw new Error('Run exceeds 5000 rows or 2 MB. Narrow the selection.');
     }
+    function result() {
+      if (!rows.length) throw new Error('No records collected. Check selectors, sign-in, and page content.');
+      return { rows, warnings };
+    }
+
     if (recipe.steps) {
       for (let cycle = 0; cycle < (recipe.repeatCount || 1); cycle++) {
         for (const [index, step] of recipe.steps.entries()) {
@@ -73,7 +76,7 @@ export async function scrape(recipe, opts = {}) {
           }
         }
       }
-      return { rows, warnings };
+      return result();
     }
     await pause(400);
     for (const action of recipe.actions || []) {
@@ -102,7 +105,7 @@ export async function scrape(recipe, opts = {}) {
         break;
       }
     }
-    return { rows, warnings };
+    return result();
   } finally {
     if (browser) await browser.close();
     else await context.close();

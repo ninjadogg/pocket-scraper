@@ -11,7 +11,7 @@ import { captureFields } from '../extension/capture.js';
 const root = new URL('../', import.meta.url);
 test('tab extraction saves through API, deduplicates, and is readable over Claude MCP', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pocket-capture-'));
-  const env = { ...process.env, PORT: '0', POCKET_SCRAPER_DATA: join(dir, 'store.json') };
+  const env = { ...process.env, PORT: '0', POCKET_SCRAPER_TOKEN: 'a'.repeat(64), POCKET_SCRAPER_DATA: join(dir, 'store.json') };
   const server = spawn(process.execPath, ['server.js'], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let browser;
   try {
@@ -20,7 +20,7 @@ test('tab extraction saves through API, deduplicates, and is readable over Claud
       server.once('error', reject);
       server.stdout.on('data', chunk => { const match = String(chunk).match(/http:\/\/127\.0\.0\.1:\d+/); if (match) { clearTimeout(timer); resolve(match[0]); } });
     });
-    const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const post = (path, body) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + 'a'.repeat(64) }, body: JSON.stringify(body) });
     const recipe = await (await post('/api/recipes', { name: 'Release notes', url: 'https://example.org/releases', fields: [
       { name: 'release', selector: 'h3', kind: 'text' }, { name: 'notes', selector: '.notes', kind: 'text' }, { name: 'link', selector: 'a', kind: 'href' }
     ] })).json();

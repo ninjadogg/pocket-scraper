@@ -11,3 +11,6 @@ dist/
 !.env.example
 *.pem
 *.key
+.api-auth.json*
+browser-profiles/
+pocket-cookies.json*
