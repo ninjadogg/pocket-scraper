@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{font:13px system-ui,sans-serif;width:370px;margin:14px;color:#172033}h2{font-size:17px;margin:0 0 10px}label{font-weight:600;display:block;margin:10px 0 4px}input,select{box-sizing:border-box;width:100%;padding:8px;border:1px solid #cdd4df;border-radius:5px;background:white;color:#111}button{border:1px solid #cbd5e1;border-radius:5px;background:#f6f7fa;padding:8px 10px;cursor:pointer}button.primary{background:#1e293b;color:white;border-color:#1e293b}button:hover{filter:brightness(.94)}.row{display:flex;gap:6px;margin-top:7px}.row>*{flex:1;min-width:0}.small{font-size:11px;color:#667085}.item{margin:5px 0;padding:7px;border:1px solid #e1e6ee;border-radius:6px}.item input{padding:5px}.item button{flex:0 0 27px;padding:3px}.message{min-height:16px;word-break:break-word;color:#1d4ed8;margin-top:8px}hr{border:0;border-top:1px solid #e6e9ef;margin:12px 0}
+</style></head><body>
+<h2>Pocket Scraper</h2>
+<label for="saved">Saved recipes</label><select id="saved"><option value="">New recipe</option></select>
+<label for="name">Recipe name</label><input id="name" placeholder="Competitor job posts">
+<label for="url">Starting URL</label><input id="url" placeholder="https://example.com/jobs">
+<hr>
+<label>Choose data (click the element on the page)</label>
+<div class="row"><input id="fieldName" placeholder="Field name (e.g. title)"><select id="kind" style="flex:0 0 90px"><option value="text">Text</option><option value="href">Link</option><option value="value">Value</option><option value="html">HTML</option></select></div>
+<div class="row"><button id="pickField">Pick field</button><button id="pickAction">Record click</button><button id="pickNext">Pick Next</button></div>
+<div class="small">After clicking Pick, click an element on the webpage. Reopen this popup to add more. ESC cancels.</div>
+<div id="fields"></div>
+<label for="workflow">Execution mode</label><select id="workflow"><option value="legacy">Clicks, then extract pages</option><option value="steps">Multi-step workflow</option></select>
+<div id="workflowControls" hidden>
+<p class="small">Steps run from top to bottom. Record click adds a click at the end. Extract collects the fields above. Repeats continue on the current page, including pages that update without changing URL.</p>
+<div class="row"><button id="addWait">Add wait</button><button id="addExtract">Add extract</button></div>
+<label for="repeatCount">Repeat entire workflow (1–30 times)</label><input id="repeatCount" type="number" min="1" max="30" value="1">
+</div>
+<div id="steps"></div><div id="actions"></div>
+<label>Maximum pages</label><input id="maxPages" type="number" min="1" max="30" value="1">
+<label>Run automatically</label><select id="schedule"><option value="0">Manual only</option><option value="15">Every 15 minutes</option><option value="60">Every hour</option><option value="360">Every 6 hours</option><option value="1440">Every day</option><option value="10080">Every week</option></select>
+<div class="row"><button class="primary" id="save">Save</button><button id="run">Save & run now</button><button id="dashboard">Results ↗</button></div>
+<div class="row"><button id="capture" class="primary">Extract from current Chrome tab</button></div>
+<p class="small">Saves the fields from this page as it is now. Open any needed sections first. Does not replay steps or run a schedule.</p>
+<div id="message" class="message"></div>
+<script src="popup.js" type="module"></script></body></html>

@@ -1,0 +1,13 @@
+node_modules/
+data/*
+!data/.gitkeep
+playwright-report/
+.DS_Store
+
+dist/
+.mcp.json
+.env
+.env.*
+!.env.example
+*.pem
+*.key

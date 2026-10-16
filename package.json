@@ -1,0 +1,19 @@
+{
+  "name": "pocket-scraper",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual selector scraping with local scheduling and MCP. No AI dependency.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "mcp": "node mcp.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.js",
+    "package": "python3 scripts/package-release.py"
+  },
+  "dependencies": {
+    "playwright": "^1.56.0"
+  }
+}
