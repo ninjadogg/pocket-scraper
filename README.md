@@ -133,8 +133,10 @@ Example Claude request: “Read the saved Action1 Release Notes in Pocket Scrape
 
 In the dashboard, click **Open session setup** beside a saved recipe. This opens a
 separate browser profile for that website. Sign in or complete verification there,
-then click **Finish setup** in the dashboard before closing the browser yourself.
-This closes the browser and saves its session, including cookies without an expiry.
+then click **Finish setup** in the dashboard, or simply close the setup window.
+Either way the session is saved, including cookies without an expiry: while setup is
+open, cookies are also saved after each page load and every 30 seconds, and closing
+the last setup window saves them once more and releases the profile.
 **Run now** and interval jobs now reuse that session in headless mode. The profile
 survives server restarts; keep `npm start` running for scheduled collection.
 Recipes on the same origin share a profile and cannot use it simultaneously.
@@ -156,7 +158,8 @@ Profiles and session cookies stay under `data/browser-profiles/` (or alongside
 `POCKET_SCRAPER_DATA`). On Unix, profile directories and saved cookie files use owner-only permissions.
 On Windows, keep the folder under your private user profile and restrict its
 Windows folder permissions; Unix permission modes do not set Windows ACLs. Treat them as sign-in credentials: exclude them from
-source control and sharing. They are not returned by the API or MCP. No cookies are
+source control and sharing. They are not returned by the API or MCP; they leave the
+data folder only when you run `npm run export-cookies` yourself (see below). No cookies are
 read from the user's normal browser profile. Use the same browser installation
 for setup and unattended execution.
 
@@ -168,6 +171,91 @@ fingerprint flag. Session setup uses the same identity as unattended runs. This
 requires no Python, external service, AI, or cookie export from everyday Chrome.
 It improves compatibility with sites that reject the default automated-browser
 identity, but does not solve interactive challenges or guarantee future access.
+
+## Use a saved login in other tools
+
+`npm run export-cookies` hands a login saved through session setup to another tool
+as a Cookie header. It runs locally, needs no server, and never prints cookie values
+to the terminal: values go only to the file named by `--out` (written atomically,
+owner-only `600`) or to standard output when you pass `--stdout`. Its summary on
+stderr lists cookie names, counts, the earliest expiry and warnings.
+
+**ISTAR (.env / Easypanel)** — one command writes one `VAR=<Cookie header>` line per
+variable. ISTAR's login-gated sources read `SCRAPER_CONNECTWISE_AUTHTOKEN` for
+`docs.connectwise.com` and `RADAR_AUTH_<VENDOR>` for the rest: `RADAR_AUTH_CROWDSTRIKE`
+(falcon.crowdstrike.com), `RADAR_AUTH_COHESITY` (docs.cohesity.com),
+`RADAR_AUTH_FORTYTWOGEARS` (community.42gears.com), `RADAR_AUTH_MOSYLE`
+(mybusiness.mosyle.com), `RADAR_AUTH_RUBRIK` (docs.rubrik.com).
+
+```bash
+npm run export-cookies -- \
+  --env SCRAPER_CONNECTWISE_AUTHTOKEN=https://docs.connectwise.com@authtoken \
+  --env RADAR_AUTH_MOSYLE=https://mybusiness.mosyle.com \
+  --out radar.env
+# Later, refresh just those variables inside an existing .env, keeping every other line:
+npm run export-cookies -- --env RADAR_AUTH_MOSYLE=https://mybusiness.mosyle.com --out .env --merge
+```
+
+- `VAR=<url-or-host>@name1,name2` exports only those cookies (`--only name1,name2`
+  with `--site`). If a named cookie is missing or expired, or any site has no
+  cookies, **nothing is written** and the command exits 2, so a half-updated `.env`
+  never ships.
+- `SCRAPER_CONNECTWISE_AUTHTOKEN` always holds the bare `authtoken` value (the
+  MindTouch JWT), because ISTAR's `scraper_worker` adds `authtoken=` itself. Every
+  other variable holds a full header such as `RADAR_AUTH_MOSYLE=sid=abc; pref=1`.
+- Lines are written unquoted. Docker compose `.env` rules, Node's and Python's dotenv
+  parsers and `docker run --env-file` all read such a line back unchanged (tested);
+  Easypanel's Environment box uses the same `KEY=value` format. A cookie value
+  containing `#`, `$`, `"`, `'`, `` ` `` or `\` would be changed by some of those parsers,
+  so the export refuses it (naming the cookie) rather than write a broken line.
+- `--out` never replaces an existing file unless you pass `--merge` (env output:
+  replace only the named variables in place, append missing ones, keep the file's
+  mode but never looser than `600`) or `--force` (replace the whole file). It refuses
+  symbolic links and files owned by another user.
+- In docker compose, a project `.env` only fills `${VAR}` references; the service must
+  list the variable under `environment:` (as ISTAR does for `SCRAPER_CONNECTWISE_AUTHTOKEN`)
+  or load the file with `env_file:`. In Easypanel, paste the lines into the service's
+  Environment settings.
+
+**Release radar** — a raw header file (`a=b; c=d`, no `Cookie:` prefix) for
+`safari_session.py fetch --cookie-header`:
+
+```bash
+npm run export-cookies -- --site https://docs.connectwise.com --out connectwise.cookie
+python3 scripts/safari_session.py fetch --run 2026-10-19 --cookie-header connectwise.cookie \
+  --url https://docs.connectwise.com/... --id cw_automate
+```
+
+**Playwright-based tools** — a storage state for `browser.newContext({ storageState })`:
+
+```bash
+npm run export-cookies -- --site https://docs.rubrik.com --format storage-state --out rubrik.storage-state.json
+```
+
+A single env line also works without `--env`:
+`npm run export-cookies -- --site https://docs.rubrik.com --format env --var RADAR_AUTH_RUBRIK --out rubrik.cookies.env`.
+
+**See what is saved** — `npm run export-cookies -- --list` shows each saved session:
+the domains its cookies cover, cookie and expired counts, the earliest expiry,
+whether session-only cookies are present and when it was saved. No values.
+
+Selection follows browser rules: a cookie is exported when its domain is the host
+(or a parent domain it was set on), its path is a prefix of the URL's path (default
+`/`), it is not expired, and, if `Secure`, the URL is `https`. All saved sessions
+are searched, since a single sign-on cookie may come from another recipe's login; if
+the same cookie is saved in several, the most recently saved wins and the summary
+says so. Exported files (`*.cookie`, `*.cookies.env`, `*.storage-state.json`,
+`radar.env`, `.env`) are git-ignored here. Warnings flag expired cookies,
+session-only cookies (they end when the site ends that login session) and exports wider than the site itself (cookies from
+a parent domain such as `.connectwise.com`, or more than 10 cookies); use `--only`
+to narrow those.
+
+> **Risks.** An exported cookie is a live login: whoever holds it is signed in as
+> that account, with no password or two-factor prompt, until it expires.
+> Anyone who can read where you put it (a shared server's environment settings) can act as that account.
+> For shared deployments, prefer a dedicated vendor account over your own.
+> Store it as a secret and never commit it; re-export when the login expires.
+> To revoke it, sign out of that session on the website or change the password.
 
 ## Distribution packages
 

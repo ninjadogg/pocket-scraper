@@ -8,7 +8,9 @@ at http://127.0.0.1:3888 on your computer.
 
 The server visits the websites in your recipes, saves collected fields, source
 URLs, timestamps and run history in its local data folder, and keeps dedicated
-browser profiles and session cookies there when session reuse is enabled.
+browser profiles and session cookies there when session reuse is enabled. Those
+cookies leave that folder only when you run `npm run export-cookies`, which writes
+them to the file you choose (or standard output) for use in another tool.
 Website requests are subject to those websites' privacy practices. Captured
 fields may contain personal information depending on your selected page.
 
@@ -27,4 +29,5 @@ configured with POCKET_SCRAPER_DATA). Remove the extension to delete its local
 drafts. Deleting a recipe in the dashboard retains historical records. Removing
 only the extension does not delete the server's records or session profiles.
 
-Do not distribute your data folder, browser profiles, or session cookie files.
+Do not distribute your data folder, browser profiles, session cookie files, or
+exported cookie files.

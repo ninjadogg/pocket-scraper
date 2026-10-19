@@ -14,3 +14,8 @@ dist/
 .api-auth.json*
 browser-profiles/
 pocket-cookies.json*
+# Exported logins (npm run export-cookies)
+*.cookie
+*.cookies.env
+*.storage-state.json
+radar.env
