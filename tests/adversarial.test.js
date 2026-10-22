@@ -9,6 +9,7 @@ import http from 'node:http';
 import { scrape } from '../runner.js';
 import { normalizeRecipe } from '../store.js';
 import { chromium } from 'playwright';
+import { browserOptions } from '../browser-session.js';
 import { captureFields } from '../extension/capture.js';
 const token = 'a'.repeat(64);
 const auth = { Authorization: 'Bearer ' + token };
@@ -21,7 +22,7 @@ test('record containers preserve missing fields in runner and tab capture; legac
   const result = await scrape(recipe,{fixtureHtml:fixture});
   assert.deepEqual(result.rows.map(r=>r.fields),[{title:'A',price:''},{title:'B',price:'$20'}]);
   await assert.rejects(scrape(normalizeRecipe(baseRecipe),{fixtureHtml:fixture}), /Field match counts differ/);
-  const browser = await chromium.launch({headless:true,...(process.env.SCRAPER_BROWSER_PATH?{executablePath:process.env.SCRAPER_BROWSER_PATH}:{})});
+  const browser = await chromium.launch({headless:true,...browserOptions()});
   try {
     const page = await browser.newPage(); await page.setContent(fixture);
     const captured = await page.evaluate(captureFields,{fields,rowSelector:'article'});
@@ -135,7 +136,7 @@ test('final-save failure discards unsaved rows, alerts the dashboard, and allows
     assert.equal(health.ok, false);
     assert.deepEqual(health.running, []);
 
-    browser = await chromium.launch({ headless: true, ...(process.env.SCRAPER_BROWSER_PATH ? { executablePath: process.env.SCRAPER_BROWSER_PATH } : {}) });
+    browser = await chromium.launch({ headless: true, ...browserOptions() });
     const page = await browser.newPage();
     await page.goto(base);
     await page.locator('#storageError').waitFor({ state: 'visible' });
