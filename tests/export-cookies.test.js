@@ -350,7 +350,8 @@ test('--merge into a file that cannot be read is a clean error, not a crash', { 
 });
 
 test('export-cookies does not load Playwright', () => {
-  const hook = fileURLToPath(new URL('./fixtures/no-playwright.mjs', import.meta.url));
+  // --import takes a URL: a bare Windows path (D:\...) would be read as scheme "d:".
+  const hook = new URL('./fixtures/no-playwright.mjs', import.meta.url).href;
   const res = spawnSync(process.execPath, ['--import', hook, SCRIPT, '--help'], { encoding: 'utf8' });
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stderr, /Usage:/);
