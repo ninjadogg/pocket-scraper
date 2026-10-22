@@ -25,7 +25,7 @@ Open **http://127.0.0.1:3888** to see results. Expand **Connect the Chrome exten
 2. Click **Load unpacked**, then choose this project's **`extension/`** folder.
 3. Open a website to collect. Click the Pocket Scraper extension icon (pin it for easy access).
 4. Use **Pick record container** to select one repeated card, list item, or table row, then pick fields inside that container. Give the recipe a name. Type a field name, e.g. `title`, choose **Text** or **Link**, click **Pick field**, and then click the matching element on the actual webpage. Reopen the extension to add additional fields.
-5. For navigation, **Record click** selects a button to click before extraction. **Pick Next** selects a next-page link or "Load more" button and defaults the cap to 5 pages (supports both URL-changing and in-place AJAX pagination, stopping automatically when no new records appear). Review or edit the generated CSS selectors in the popup.
+5. For navigation, **Record click** selects a button to click before extraction. **Pick Next** selects a next-page link or "Load more" button and defaults the cap to 5 pages (supports both URL-changing and in-place AJAX pagination: after each click it waits up to 10 seconds for the records to change, and stops when they don't). Review or edit the generated CSS selectors in the popup.
 6. Choose a schedule and click **Save & run now**. Check results in the dashboard.
 
 **Record association:** With a record container, each matching container produces one row. Missing fields stay blank in that record; multiple matches within one field are joined with newlines. Field selectors are relative to the container. Legacy recipes without a container reject unequal field counts; equal counts produce a warning because they cannot guarantee correct association. Re-pick fields after changing the record container.
@@ -34,7 +34,7 @@ Open **http://127.0.0.1:3888** to see results. Expand **Connect the Chrome exten
 
 Choose manual, 15 minutes, hourly, 6-hourly, daily, or weekly. The scheduler runs inside `npm start`, so keep it running. A job's next due time is persisted. If the app was closed, the next due job runs after restart. Schedules are approximate, not exact wall-clock cron expressions.
 
-For unattended operation on macOS, install the user LaunchAgent with `npm run launchd -- --install` (inspect with `npm run launchd -- --status`, remove with `npm run launchd -- --uninstall`), or use another process manager. There's no cloud dependency.
+For unattended operation on macOS, install the user LaunchAgent with `npm run launchd -- --install` (inspect with `npm run launchd -- --status`, remove with `npm run launchd -- --uninstall`), or use another process manager. The LaunchAgent keeps `PATH`, `PORT`, `POCKET_SCRAPER_DATA`, `SCRAPER_BROWSER_PATH` and the run limits from the shell you install it from; `POCKET_SCRAPER_TOKEN` is never written to the plist (the server reuses the key saved in `.api-auth.json`). Rerun `--install` after changing any of them. There's no cloud dependency.
 
 ## Data and APIs
 
@@ -63,7 +63,7 @@ Tools exposed: `list_scraper_recipes`, `read_scraped_records`, `read_scraper_run
 
 ## Limitations / next step
 
-- This MVP does not automatically solve CAPTCHAs or bot-blocking, and does not handle scrolling, infinite scroll, or `iframe` elements. In-place "Load more" / AJAX pagination via **Pick Next** stops automatically when a click adds no new records, and multi-step workflows can replay custom click/wait sequences.
+- This MVP does not automatically solve CAPTCHAs or bot-blocking, and does not handle scrolling, infinite scroll, or `iframe` elements. In-place "Load more" / AJAX pagination via **Pick Next** stops when a click doesn't change the records within 10 seconds, and multi-step workflows can replay custom click/wait sequences.
 - CSS selectors are deterministic but **fragile when websites redesign**. Watch per-field selector health warnings, zero-match warnings, and run failures in the dashboard.
 - Runs use a fresh browser until you enable saved sessions through dashboard session setup. Saved sessions reuse a dedicated profile; your everyday Chrome profile is never used.
 - Historical data is a simple JSON store; for hundreds of sources or millions of records, replace storage with SQLite/PostgreSQL and add per-site throttling/queues.
@@ -317,8 +317,10 @@ verification when a website requests it.
 
 The automated tests and packaging run on Windows, macOS and Linux. Manual
 installation and startup configuration must still be checked on your own machine.
-Concurrent runs default to 2 (`POCKET_SCRAPER_MAX_CONCURRENT`) with a 3-minute per-run
-deadline (`POCKET_SCRAPER_RUN_TIMEOUT_MS`). This beta has no automatic data
+Concurrent runs default to 2 (`POCKET_SCRAPER_MAX_CONCURRENT`, at least 1) with a 3-minute
+per-run deadline (`POCKET_SCRAPER_RUN_TIMEOUT_MS`, in milliseconds, at least 500); a run that
+reaches the deadline is stopped and its browser closed. These and `PORT` must be whole
+numbers: any other value prints a warning and the default is used. This beta has no automatic data
 retention or damaged-store recovery. Use a small number of trusted recipes and
 back up your private data directory.
 

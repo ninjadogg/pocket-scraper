@@ -113,7 +113,7 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   const domain = `gui/${uid}`;
   if (mode === 'write' || mode === 'install') {
     readSettings(env, text => stderr(`Warning: ${text}\n`));
-    if (env.POCKET_SCRAPER_TOKEN) stderr('Note: POCKET_SCRAPER_TOKEN is not written to the plist; the LaunchAgent uses the connection key saved in local data.\n');
+    if (env.POCKET_SCRAPER_TOKEN) stderr('Note: POCKET_SCRAPER_TOKEN is not written to the plist; the LaunchAgent uses the key the server last saved in .api-auth.json.\n');
   }
 
   if (mode === 'print') {

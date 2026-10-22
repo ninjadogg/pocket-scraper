@@ -33,6 +33,8 @@ public disclosure with the maintainer while a fix is prepared.
   you run it. Its output (`--out` files are written owner-only, `600`) is a live
   login: store it as a secret, never commit or attach it, and prefer a dedicated
   website account when the export goes to a shared server.
+- `npm run launchd -- --install` never writes `POCKET_SCRAPER_TOKEN` into the
+  LaunchAgent plist; the server reuses the key saved in `.api-auth.json`.
 - Grant MCP access only to trusted clients. It reads local results directly and
   relies on filesystem access rather than the HTTP connection key.
 - Scraped pages and values are untrusted content. JSON preserves source values;

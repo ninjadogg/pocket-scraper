@@ -25,13 +25,20 @@ for name in EXT:
         for ref in re.findall(r'''(?:from\s+|src=)["']([^"']+)["']''', source.read_text()):
             assert ref.removeprefix('./') in EXT, f'Unpackaged dependency: {ref}'
 SERVER = ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'SECURITY.md', 'server.js', 'runner.js',
-          'auth.js', 'browser-session.js', 'export-cookies.js', 'store.js', 'capture.js', 'mcp.js', 'dashboard.html',
+          'auth.js', 'browser-session.js', 'session-paths.js', 'settings.js', 'export-cookies.js', 'store.js',
+          'capture.js', 'mcp.js', 'dashboard.html',
           'scripts/launchd.js', 'scripts/package-release.py', 'scripts/package-release.js', 'distribution/INSTALL.md',
           'distribution/PRIVACY.md', 'distribution/PUBLISHING.md']
 SERVER += ['tests/' + name for name in ['fixture.html', 'adversarial.test.js', 'capture.test.js', 'picker.test.js',
            'scraper.test.js', 'session.test.js', 'session-api.test.js', 'workflow-popup.test.js',
-           'export-cookies.test.js', 'session-setup-close.test.js']]
+           'export-cookies.test.js', 'session-setup-close.test.js', 'settings.test.js', 'launchd.test.js',
+           'fixtures/no-playwright.mjs']]
 SERVER += ['extension/' + name for name in EXT]
+for name in SERVER:
+    if name.endswith(('.js', '.mjs')):
+        for ref in re.findall(r'''from\s+["'](\.{1,2}/[^"']+)["']''', (ROOT / name).read_text()):
+            dep = (ROOT / name).parent.joinpath(ref).resolve().relative_to(ROOT).as_posix()
+            assert dep in SERVER, f'Unpackaged dependency of {name}: {ref}'
 OUT = ROOT / 'dist'
 OUT.mkdir(exist_ok=True)
 
