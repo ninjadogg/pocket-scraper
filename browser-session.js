@@ -1,14 +1,14 @@
 import { chromium } from 'playwright';
 import { existsSync, mkdirSync, chmodSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { join } from 'node:path';
 import { DATA_PATH } from './store.js';
+import { sessionKey, COOKIE_FILE, profileRootFor } from './session-paths.js';
 
 const busy = new Map();
 const setups = new Map();
 const cookiePaths = new WeakMap();
 let saveCount = 0;
-export const sessionKey = recipe => createHash('sha256').update(new URL(recipe.url).origin).digest('hex');
+export { sessionKey };
 export function browserOptions() {
   if (process.env.SCRAPER_BROWSER_PATH) return { executablePath: process.env.SCRAPER_BROWSER_PATH };
   // Use installed Chrome if Playwright's matching browser has not been downloaded.
@@ -36,7 +36,7 @@ export function sessionStatus(recipe) {
   const key = sessionKey(recipe);
   return { busy: busy.has(key), setupOpen: setups.has(key) };
 }
-export async function acquireSession(recipe, { headless = true, profileRoot = join(dirname(DATA_PATH), 'browser-profiles') } = {}) {
+export async function acquireSession(recipe, { headless = true, profileRoot = profileRootFor(DATA_PATH) } = {}) {
   const key = sessionKey(recipe);
   if (busy.has(key)) throw Object.assign(new Error('This website’s browser session is busy. Finish session setup or wait for its current run.'), { code: 'SESSION_BUSY' });
   busy.set(key, true);
@@ -46,7 +46,7 @@ export async function acquireSession(recipe, { headless = true, profileRoot = jo
     mkdirSync(path, { recursive: true, mode: 0o700 });
     chmodSync(path, 0o700);
     const context = await chromium.launchPersistentContext(path, { headless, ...await unattendedOptions() });
-    const cookiePath = join(path, 'pocket-cookies.json');
+    const cookiePath = join(path, COOKIE_FILE);
     try {
       if (existsSync(cookiePath)) await context.addCookies(JSON.parse(readFileSync(cookiePath, 'utf8')));
     } catch (error) { await context.close(); throw error; }

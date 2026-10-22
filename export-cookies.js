@@ -4,14 +4,14 @@
 // file named by --out or, when asked explicitly, to --stdout; never to the terminal
 // summary, which lists cookie names only.
 import { parseArgs } from 'node:util';
-import { readdirSync, readFileSync, statSync, lstatSync, writeFileSync, renameSync, chmodSync, rmSync } from 'node:fs';
+import { readdirSync, readFileSync, realpathSync, statSync, lstatSync, writeFileSync, renameSync, chmodSync, rmSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { DATA_PATH } from './store.js';
-import { sessionKey } from './browser-session.js';
+import { sessionKey, COOKIE_FILE, profileRootFor } from './session-paths.js';
 
-export const COOKIE_FILE = 'pocket-cookies.json';
+export { COOKIE_FILE, profileRootFor };
 /** Above this many cookies, the summary suggests --only. */
 export const WIDE_SELECTION = 10;
 /** ISTAR and its scraper_worker share this variable and expect the bare MindTouch JWT. */
@@ -38,8 +38,6 @@ must be asked for explicitly. --out never replaces an existing file unless --for
 (replace it) or --merge (env output: update only the named variables) is given.`;
 
 // ── saved sessions ───────────────────────────────────────────────────────────
-
-export const profileRootFor = dataPath => join(dirname(dataPath), 'browser-profiles');
 
 function originLabels(dataPath) {
   const labels = new Map();
@@ -316,7 +314,10 @@ export function writeSecret(target, text, { replace = false, merge } = {}) {
   if (stat && !replace && !merge) throw new ExportError(`Refusing to replace existing ${abs}. Pass --force to replace it, or --merge (env output) to update only the exported variables.`);
   let mode = 0o600;
   if (stat && merge) {
-    text = merge(readFileSync(abs, 'utf8'));
+    let old;
+    try { old = readFileSync(abs, 'utf8'); }
+    catch (error) { throw new ExportError(`Cannot read ${abs}: ${error.code || error.message}`); }
+    text = merge(old);
     mode = stat.mode & 0o600; // keep the file's mode, never looser than owner-only
   } else if (merge) text = merge('');
   const tmp = join(dirname(abs), `.${basename(abs)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
@@ -469,6 +470,8 @@ export function main(argv = process.argv.slice(2), { stdout = process.stdout, st
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Compare real paths: argv[1] keeps symlinks as typed, import.meta.url does not.
+const isMain = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMain()) {
   process.exitCode = main();
 }

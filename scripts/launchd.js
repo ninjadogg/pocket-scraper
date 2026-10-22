@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-import { chmodSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { SERVER_ENV, readSettings } from '../settings.js';
 
 export const DEFAULT_LABEL = 'com.pocketscraper.server';
 
@@ -17,15 +18,15 @@ const xmlEscape = value => String(value)
 export function renderPlist({
   label = DEFAULT_LABEL,
   nodePath = process.execPath,
-   workingDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
+  workingDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
   serverPath = join(workingDirectory, 'server.js'),
   logDir = join(workingDirectory, 'data', 'logs'),
   env = {}
 } = {}) {
+  // Everything the server reads except POCKET_SCRAPER_TOKEN, which stays out of the plist.
   const envEntries = {
     PATH: env.PATH || process.env.PATH || '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin',
-    ...(env.POCKET_SCRAPER_DATA ? { POCKET_SCRAPER_DATA: env.POCKET_SCRAPER_DATA } : {}),
-    ...(env.SCRAPER_BROWSER_PATH ? { SCRAPER_BROWSER_PATH: env.SCRAPER_BROWSER_PATH } : {})
+    ...Object.fromEntries(SERVER_ENV.filter(name => env[name]).map(name => [name, env[name]]))
   };
   const envXml = Object.entries(envEntries)
     .map(([k, v]) => `      <key>${xmlEscape(k)}</key>\n      <string>${xmlEscape(v)}</string>`)
@@ -82,6 +83,7 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   nodePath = process.execPath,
   env = process.env,
   execLaunchctl = args => spawnSync('launchctl', args, { encoding: 'utf8' }),
+  sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   stdout = text => process.stdout.write(text),
   stderr = text => process.stderr.write(text)
 } = {}) {
@@ -109,6 +111,10 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   const logDir = join(workingDirectory, 'data', 'logs');
   const xml = renderPlist({ label, nodePath, workingDirectory, logDir, env });
   const domain = `gui/${uid}`;
+  if (mode === 'write' || mode === 'install') {
+    readSettings(env, text => stderr(`Warning: ${text}\n`));
+    if (env.POCKET_SCRAPER_TOKEN) stderr('Note: POCKET_SCRAPER_TOKEN is not written to the plist; the LaunchAgent uses the connection key saved in local data.\n');
+  }
 
   if (mode === 'print') {
     stdout(xml);
@@ -126,7 +132,14 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
     mkdirSync(logDir, { recursive: true, mode: 0o700 });
     writePlistAtomically(plistPath, xml);
     execLaunchctl(['bootout', domain, plistPath]);
-    const res = execLaunchctl(['bootstrap', domain, plistPath]);
+    // bootout returns before the old service is gone; bootstrapping too soon fails
+    // with "Bootstrap failed: 5: Input/output error".
+    for (let waited = 0; waited < 5000 && execLaunchctl(['print', `${domain}/${label}`]).status === 0; waited += 200) sleep(200);
+    let res = execLaunchctl(['bootstrap', domain, plistPath]);
+    if (res.status !== 0) {
+      sleep(1000);
+      res = execLaunchctl(['bootstrap', domain, plistPath]);
+    }
     if (res.status !== 0) {
       throw new Error(`launchctl bootstrap failed: ${(res.stderr || res.stdout || '').trim()}`);
     }
@@ -149,7 +162,9 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Compare real paths: argv[1] keeps symlinks and spaces as typed, import.meta.url does not.
+const isMain = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMain()) {
   try {
     runLaunchdCli();
   } catch (err) {

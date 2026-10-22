@@ -334,3 +334,39 @@ test('--merge replaces only the named variables and keeps every other byte', () 
     assert.equal(merged.code, 1, '--merge needs env output');
   } finally { f.done(); }
 });
+
+test('--merge into a file that cannot be read is a clean error, not a crash', { skip: (process.platform === 'win32' || process.getuid?.() === 0) && 'permissions are not enforced here' }, () => {
+  const f = fixture();
+  try {
+    const out = join(f.dir, '.env');
+    writeFileSync(out, 'KEEP=1\n', { mode: 0o600 });
+    chmodSync(out, 0o200);
+    const r = run(['--env', 'RADAR_AUTH_DOCS=docs.example.com@docs_sid', '--out', out, '--merge'], f.dataPath);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /export-cookies: Cannot read .*\.env: EACCES/);
+    chmodSync(out, 0o600);
+    assert.equal(readFileSync(out, 'utf8'), 'KEEP=1\n', 'the file is untouched');
+  } finally { f.done(); }
+});
+
+test('export-cookies does not load Playwright', () => {
+  const hook = fileURLToPath(new URL('./fixtures/no-playwright.mjs', import.meta.url));
+  const res = spawnSync(process.execPath, ['--import', hook, SCRIPT, '--help'], { encoding: 'utf8' });
+  assert.equal(res.status, 0, res.stderr);
+  assert.match(res.stderr, /Usage:/);
+  // The hook does catch a module that needs Playwright.
+  const control = spawnSync(process.execPath, ['--import', hook, fileURLToPath(new URL('../browser-session.js', import.meta.url))], { encoding: 'utf8' });
+  assert.notEqual(control.status, 0);
+  assert.match(control.stderr, /Playwright was loaded/);
+});
+
+test('the CLI runs when started through a symlink in a folder whose name has a space', { skip: process.platform === 'win32' && 'symlinks need privileges on Windows' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pocket export main '));
+  try {
+    const link = join(dir, 'export-cookies.js');
+    symlinkSync(SCRIPT, link);
+    const res = spawnSync(process.execPath, [link, '--help'], { encoding: 'utf8' });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stderr, /Usage:/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
