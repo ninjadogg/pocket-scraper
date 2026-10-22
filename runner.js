@@ -56,7 +56,7 @@ export async function scrape(recipe, opts = {}) {
       });
       if (challenge) throw Object.assign(new Error('Website is showing browser security verification instead of the requested content. Open session setup in the dashboard, complete verification, then finish setup and retry.'), { code: 'SESSION_ATTENTION' });
     }
-    const read = async () => JSON.parse(await page.evaluate(extractFields, { fields: recipe.fields, rowSelector: recipe.rowSelector, serialize: true }));
+    const read = async () => JSON.parse(await page.evaluate(extractFields, { fields: recipe.fields, rowSelector: recipe.rowSelector, serialize: true, healthWarnings: false }));
 
     if (opts.fixtureHtml) {
       // Offline integration tests can exercise the real browser without network access.
@@ -69,11 +69,12 @@ export async function scrape(recipe, opts = {}) {
     // Returns the page's record signature. When `previous` is a prefix of it, the
     // page kept the earlier records and appended more ("Load more"); only the
     // appended ones are new. Repeated values are kept: they can be real records.
-    async function extract(label, { previous } = {}) {
+    // `output` is a reading already taken by waitForChange.
+    async function extract(label, { previous, output } = {}) {
       await page.waitForLoadState('domcontentloaded');
       checkStatus();
       await checkChallenge();
-      const output = await read();
+      output ||= await read();
       const current = signature(output);
       const batch = previous && extendsList(current, previous) ? output.rows.slice(previous.length) : output.rows;
       extractions++;
@@ -82,28 +83,40 @@ export async function scrape(recipe, opts = {}) {
         seen.count++;
         emptyFields.set(field.name, seen);
       }
-      warnings.push(...output.warnings.filter(w => !w.startsWith('Selector health:')).map(w => `${label}: ${w}`));
+      warnings.push(...output.warnings.map(w => `${label}: ${w}`));
       if (!batch.length) warnings.push(`${label}: no nonempty records`);
       rows.push(...batch);
       if (rows.length > 5000 || Buffer.byteLength(JSON.stringify(rows)) > 2_000_000) throw new Error('Run exceeds 5000 rows or 2 MB. Narrow the selection.');
       return current;
     }
-    // After a Next click, wait until the records differ from the last page, however
-    // the site loads them (navigation, pushState or in-place AJAX).
-    const changeTimeout = opts.pageChangeTimeoutMs ?? 10_000;
+    // After a Next click, wait until the records differ from the last page and read
+    // the same twice in a row (not an empty or half-drawn list), however the site
+    // loads them (navigation, pushState or in-place AJAX). Returns that reading, or
+    // null when nothing changed in time. An error still present at the deadline is
+    // a real failure on the next page, not a quiet end of pagination.
+    const changeTimeout = opts.pageChangeTimeoutMs ?? timeout;
     async function waitForChange(previous) {
       const deadline = Date.now() + changeTimeout;
+      let last;
+      let lastError;
       do {
         await pause(250, signal);
         checkStatus();
         try {
-          if (!sameList(signature(await read()), previous)) return true;
-        } catch {
+          const output = await read();
+          const current = signature(output);
+          lastError = undefined;
+          if (current.length && !sameList(current, previous) && last && sameList(current, last)) return output;
+          last = current;
+        } catch (error) {
           // Mid-navigation or mid-render; keep waiting unless verification is showing.
-          await checkChallenge().catch(error => { if (error.code === 'SESSION_ATTENTION') throw error; });
+          lastError = error;
+          last = undefined;
+          await checkChallenge().catch(e => { if (e.code === 'SESSION_ATTENTION') throw e; });
         }
       } while (Date.now() < deadline);
-      return false;
+      if (lastError) throw lastError;
+      return null;
     }
     function result() {
       if (!rows.length) throw new Error('No records collected. Check selectors, sign-in, and page content.');
@@ -140,6 +153,7 @@ export async function scrape(recipe, opts = {}) {
     }
     const visited = new Set();
     let previous;
+    let changed;
     let inPlace = false;
     for (let pageNo = 0; pageNo < (recipe.maxPages || 1); pageNo++) {
       const url = page.url();
@@ -148,17 +162,19 @@ export async function scrape(recipe, opts = {}) {
         break;
       }
       visited.add(url);
-      previous = await extract(`Page ${pageNo + 1}`, { previous });
+      previous = await extract(`Page ${pageNo + 1}`, { previous, output: changed });
       if (pageNo + 1 >= (recipe.maxPages || 1) || !recipe.nextSelector) break;
       const next = page.locator(recipe.nextSelector).first();
       if (!(await next.count()) || !(await next.isVisible()) || !(await next.isEnabled()) || (await next.getAttribute('aria-disabled')) === 'true') break;
       const before = page.url();
       await next.click();
-      if (!(await waitForChange(previous))) {
+      const output = await waitForChange(previous);
+      if (!output) {
         warnings.push(`Next button did not load new records within ${Math.round(changeTimeout / 1000)}s; stopping pagination.`);
         break;
       }
       inPlace = page.url() === before;
+      changed = output;
     }
     return result();
   } catch (error) {

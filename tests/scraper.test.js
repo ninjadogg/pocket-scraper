@@ -132,10 +132,12 @@ test('one extraction keeps the health warning within the 30 warnings a tab captu
 test('a run keeps at most 100 warnings and says how many more there were', async () => {
   const recipe = normalizeRecipe({ ...drifted, name: 'Noisy', steps: Array(5).fill({ type: 'extract' }) });
   const { warnings } = await scrape(recipe, { fixtureHtml: cards(35) });
-  // 1 health warning + 5 extractions x 29 record warnings = 146.
+  // 1 health warning + 5 extractions x 30 record warnings = 151; the runner's own
+  // health report does not crowd out record warnings.
   assert.equal(warnings.length, 101);
   assert.match(warnings[0], /^Selector health/);
-  assert.equal(warnings[100], '…and 46 more warnings');
+  assert.equal(warnings.filter(w => w.startsWith('Repeat 1, step 1')).length, 30);
+  assert.equal(warnings[100], '…and 51 more warnings');
 });
 
 // Next replaces the list with the following page after delayMs; hidden on the last page.
@@ -193,6 +195,28 @@ test('in-place pagination waits for a slow next page instead of stopping', async
   const { rows, warnings } = await scrape(paged('Slow'), { fixtureHtml: pager([['A'], ['B']], 1500) });
   assert.deepEqual(rows.map(r => r.fields.name), ['A', 'B']);
   assert.deepEqual(warnings, []);
+});
+
+test('pagination waits out an emptied or half-drawn list instead of reading it', async () => {
+  // Next empties the list (a spinner), then draws the next page one record at a time.
+  const html = `<ul id="items"><li class="name">A</li><li class="name">B</li></ul><button id="next">Next</button><script>
+    document.getElementById('next').onclick = () => {
+      const items = document.getElementById('items');
+      items.innerHTML = '';
+      setTimeout(() => { items.innerHTML = '<li class="name">C</li>'; }, 400);
+      setTimeout(() => { items.innerHTML += '<li class="name">D</li>'; document.getElementById('next').hidden = true; }, 700);
+    };
+  </script>`;
+  const recipe = normalizeRecipe({ name: 'Spinner', url: 'https://example.org', fields: [{ name: 'name', selector: '.name' }], nextSelector: '#next', maxPages: 5 });
+  const { rows, warnings } = await scrape(recipe, { fixtureHtml: html, pageChangeTimeoutMs: 3000 });
+  assert.deepEqual(rows.map(r => r.fields.name), ['A', 'B', 'C', 'D']);
+  assert.deepEqual(warnings, []);
+});
+
+test('a next page that never shows records fails the run instead of ending quietly', async () => {
+  const html = `<ul><li class="card"><span class="name">A</span></li></ul>
+    <button id="next" onclick="document.body.innerHTML = '<p>Please sign in</p>'">Next</button>`;
+  await assert.rejects(scrape(paged('Signed out'), { fixtureHtml: html, pageChangeTimeoutMs: 1000 }), /No record containers matched/);
 });
 
 const abortAfter = ms => {

@@ -144,13 +144,14 @@ const isParentDomain = (cookie, host) => {
 /**
  * The cookies a browser would send to `url`, gathered across every saved session.
  * When the same name+domain+path is saved more than once, the most recently saved
- * session wins (it holds the newest state the site set).
+ * session with a live copy wins (it holds the newest state the site set).
  */
 export function selectCookies(sessions, url, { now = Date.now(), only } = {}) {
   const host = url.hostname.toLowerCase();
   const requestPath = url.pathname || '/';
   const https = url.protocol === 'https:';
   const chosen = new Map();
+  const stale = new Map();
   const duplicates = [];
   for (const session of sessions) { // newest first
     for (const cookie of session.cookies) {
@@ -158,6 +159,11 @@ export function selectCookies(sessions, url, { now = Date.now(), only } = {}) {
       if (cookie.secure && !https) continue;
       if (only && !only.includes(cookie.name)) continue;
       const key = `${cookie.name}\0${cookie.domain.toLowerCase()}\0${cookie.path || '/'}`;
+      // An expired copy never hides a live one saved in an older session file.
+      if (expired(cookie, now)) {
+        if (!stale.has(key)) stale.set(key, cookie);
+        continue;
+      }
       const held = chosen.get(key);
       if (held) {
         if (held.session !== session) {
@@ -170,15 +176,14 @@ export function selectCookies(sessions, url, { now = Date.now(), only } = {}) {
       chosen.set(key, { cookie, session });
     }
   }
-  const all = [...chosen.values()];
-  const live = all.filter(c => !expired(c.cookie, now));
-  const stale = all.filter(c => expired(c.cookie, now)).map(c => c.cookie);
+  const live = [...chosen.values()];
   // Browsers send longer paths first; keep the saved order otherwise.
   const cookies = live.map((c, i) => ({ ...c, i }))
     .sort((a, b) => (b.cookie.path || '/').length - (a.cookie.path || '/').length || a.i - b.i)
     .map(c => c.cookie);
   const missing = only ? only.filter(name => !cookies.some(c => c.name === name)) : [];
-  return { url, host, cookies, expired: stale, duplicates, missing, only };
+  const expiredOnly = [...stale].filter(([key]) => !chosen.has(key)).map(([, cookie]) => cookie);
+  return { url, host, cookies, expired: expiredOnly, duplicates, missing, only };
 }
 
 // ── formats ──────────────────────────────────────────────────────────────────
@@ -388,7 +393,9 @@ function noCookies(selection, label) {
   return `${label}: no saved cookies would be sent to ${url.href}${stale.length ? ` (${stale.length} matching cookie${stale.length === 1 ? ' has' : 's have'} expired)` : ''}`;
 }
 
-export function main(argv = process.argv.slice(2), { stdout = process.stdout, stderr = process.stderr, dataPath = DATA_PATH, now = Date.now() } = {}) {
+// `npm run` starts scripts in the package folder; a relative --out means the folder
+// the command was typed in (INIT_CWD).
+export function main(argv = process.argv.slice(2), { stdout = process.stdout, stderr = process.stderr, dataPath = DATA_PATH, now = Date.now(), cwd = process.env.INIT_CWD || process.cwd() } = {}) {
   try {
     let parsed;
     try {
@@ -459,7 +466,7 @@ export function main(argv = process.argv.slice(2), { stdout = process.stdout, st
       stdout.write(text);
       stderr.write(`Wrote ${format} output to standard output.\n`);
     } else {
-      const path = writeSecret(o.out, text, { replace: o.force, merge });
+      const path = writeSecret(resolve(cwd, o.out), text, { replace: o.force, merge });
       stderr.write(`${o.merge ? 'Updated' : 'Wrote'} ${path} (${format}, owner-only). Treat it like a password; never commit it.\n`);
     }
     return 0;

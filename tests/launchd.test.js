@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -102,5 +102,39 @@ test('the CLI runs when started through a symlink in a folder whose name has a s
     const res = spawnSync(process.execPath, [link, '--print'], { encoding: 'utf8' });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /<plist version="1.0">/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('--uninstall boots the service out by label, and says so when that fails', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pocket-launchd-uninstall-'));
+  try {
+    const plistPath = join(dir, 'agent.plist');
+    const uninstall = (printStatus, bootoutStatus) => {
+      writeFileSync(plistPath, '<plist/>');
+      const calls = [];
+      const execLaunchctl = args => { calls.push(args); return { status: args[0] === 'print' ? printStatus : bootoutStatus, stdout: '', stderr: 'Boot-out failed: 5' }; };
+      const run = () => runLaunchdCli(['--uninstall', '--out', plistPath], { uid: 501, workingDirectory: dir, execLaunchctl, ...quiet });
+      return { calls, run };
+    };
+    const loaded = uninstall(0, 0);
+    loaded.run();
+    assert.deepEqual(loaded.calls, [['print', 'gui/501/com.pocketscraper.server'], ['bootout', 'gui/501/com.pocketscraper.server']]);
+    assert.equal(existsSync(plistPath), false);
+    const stuck = uninstall(0, 5);
+    assert.throws(() => stuck.run(), /bootout failed; com\.pocketscraper\.server is still loaded/);
+    assert.equal(existsSync(plistPath), true, 'the plist stays while the service is loaded');
+    const absent = uninstall(113, 0);
+    absent.run();
+    assert.deepEqual(absent.calls.map(c => c[0]), ['print']);
+    assert.equal(existsSync(plistPath), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a relative --out is written where the command was typed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pocket-launchd-cwd-'));
+  try {
+    const { plistPath } = runLaunchdCli(['--write', '--out', 'agent.plist'], { workingDirectory: dir, cwd: dir, env: {}, ...quiet });
+    assert.equal(plistPath, join(dir, 'agent.plist'));
+    assert.equal(existsSync(plistPath), true);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

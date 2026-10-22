@@ -1,7 +1,8 @@
 // Self-contained: shared by injected Chrome capture and the Playwright runner.
 export function extractFields(fields, expectedOrigin, rowSelector = '') {
   let serialize = false;
-  if (!Array.isArray(fields)) ({ fields, rowSelector = '', expectedOrigin, serialize = false } = fields);
+  let healthWarnings = true;
+  if (!Array.isArray(fields)) ({ fields, rowSelector = '', expectedOrigin, serialize = false, healthWarnings = true } = fields);
   if (expectedOrigin && location.origin !== expectedOrigin) throw new Error('Open a page on the recipe’s website before extracting.');
   if (/^(just a moment|attention required)/i.test(document.title.trim()) && /cloudflare|security verification|verify you are human/i.test(document.body?.innerText || '')) throw new Error('Finish the website’s browser verification before extracting.');
   const warnings = [];
@@ -45,7 +46,8 @@ export function extractFields(fields, expectedOrigin, rowSelector = '') {
     }
   }
   // Health warnings come first and the total stays within the 30 a tab capture accepts.
-  const health = emptyFields.map(f => `Selector health: field "${f.name}" (${f.selector}) was empty across all ${rows.length} record(s)`);
+  // The runner reports emptyFields once per run instead, so it turns them off here.
+  const health = !healthWarnings ? [] : emptyFields.map(f => `Selector health: field "${f.name}" (${f.selector}) was empty across all ${rows.length} record(s)`);
   const output = { pageUrl: location.href, rows, warnings: [...health, ...warnings].slice(0, 30), emptyFields };
   return serialize ? JSON.stringify(output) : output;
 }

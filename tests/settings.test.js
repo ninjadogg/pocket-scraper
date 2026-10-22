@@ -19,6 +19,9 @@ test('settings fall back to the default, with a warning, unless given a whole nu
   assert.equal(read('60000'), 60_000);
   for (const raw of ['3m', '180s', 'two', '-1', '1.5', '499', 'NaN', 'Infinity']) assert.equal(read(raw), 180_000, raw);
   assert.equal(warnings.length, 8);
+  assert.equal(readSettings({ POCKET_SCRAPER_RUN_TIMEOUT_MS: '2147483647' }, warn).runTimeoutMs, 2_147_483_647);
+  assert.equal(readSettings({ POCKET_SCRAPER_RUN_TIMEOUT_MS: '3000000000' }, warn).runTimeoutMs, 180_000, 'beyond setTimeout would fire at once');
+  assert.equal(warnings.length, 9);
   assert.match(warnings[0], /^X=3m is not a whole number from 500 to \d+; using 180000\.$/);
 });
 

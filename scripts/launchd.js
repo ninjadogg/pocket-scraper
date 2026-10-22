@@ -82,6 +82,9 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   workingDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '..'),
   nodePath = process.execPath,
   env = process.env,
+  // `npm run` starts scripts in the package folder; a relative --out means the folder
+  // the command was typed in (INIT_CWD).
+  cwd = process.env.INIT_CWD || process.cwd(),
   execLaunchctl = args => spawnSync('launchctl', args, { encoding: 'utf8' }),
   sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   stdout = text => process.stdout.write(text),
@@ -107,10 +110,12 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
     } else throw new Error(`Unknown option: ${arg}`);
   }
 
-  const plistPath = resolve(outPath || join(home, 'Library', 'LaunchAgents', `${label}.plist`));
+  const plistPath = outPath ? resolve(cwd, outPath) : join(home, 'Library', 'LaunchAgents', `${label}.plist`);
   const logDir = join(workingDirectory, 'data', 'logs');
   const xml = renderPlist({ label, nodePath, workingDirectory, logDir, env });
   const domain = `gui/${uid}`;
+  // Address the loaded service by label: works whatever plist path it came from.
+  const service = `${domain}/${label}`;
   if (mode === 'write' || mode === 'install') {
     readSettings(env, text => stderr(`Warning: ${text}\n`));
     if (env.POCKET_SCRAPER_TOKEN) stderr('Note: POCKET_SCRAPER_TOKEN is not written to the plist; the LaunchAgent uses the key the server last saved in .api-auth.json.\n');
@@ -131,10 +136,10 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   if (mode === 'install') {
     mkdirSync(logDir, { recursive: true, mode: 0o700 });
     writePlistAtomically(plistPath, xml);
-    execLaunchctl(['bootout', domain, plistPath]);
+    execLaunchctl(['bootout', service]);
     // bootout returns before the old service is gone; bootstrapping too soon fails
     // with "Bootstrap failed: 5: Input/output error".
-    for (let waited = 0; waited < 5000 && execLaunchctl(['print', `${domain}/${label}`]).status === 0; waited += 200) sleep(200);
+    for (let waited = 0; waited < 5000 && execLaunchctl(['print', service]).status === 0; waited += 200) sleep(200);
     let res = execLaunchctl(['bootstrap', domain, plistPath]);
     if (res.status !== 0) {
       sleep(1000);
@@ -148,14 +153,17 @@ export function runLaunchdCli(argv = process.argv.slice(2), {
   }
 
   if (mode === 'uninstall') {
-    execLaunchctl(['bootout', domain, plistPath]);
+    if (execLaunchctl(['print', service]).status === 0) {
+      const res = execLaunchctl(['bootout', service]);
+      if (res.status !== 0) throw new Error(`launchctl bootout failed; ${label} is still loaded: ${(res.stderr || res.stdout || '').trim()}`);
+    }
     if (existsSync(plistPath)) rmSync(plistPath);
     stderr(`Uninstalled ${label} (${plistPath})\n`);
     return { mode, plistPath };
   }
 
   if (mode === 'status') {
-    const res = execLaunchctl(['print', `${domain}/${label}`]);
+    const res = execLaunchctl(['print', service]);
     const loaded = res.status === 0;
     stdout(`${label}: ${loaded ? 'loaded' : 'not loaded'} (plist: ${existsSync(plistPath) ? plistPath : 'missing'})\n`);
     return { mode, plistPath, loaded };

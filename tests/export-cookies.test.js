@@ -370,3 +370,24 @@ test('the CLI runs when started through a symlink in a folder whose name has a s
     assert.match(res.stderr, /Usage:/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('an expired copy in a newer session never hides a live copy in an older one', () => {
+  const url = parseSite('docs.example.com');
+  const newer = { cookies: [c('sso', '.example.com', { value: 'SECRET-expired', expires: PAST })] };
+  const older = { cookies: [c('sso', '.example.com', { value: 'SECRET-live' })] };
+  const picked = selectCookies([newer, older], url, { now: NOW });
+  assert.deepEqual(picked.cookies.map(x => x.value), ['SECRET-live']);
+  assert.deepEqual(picked.expired, []);
+  const none = selectCookies([newer], url, { now: NOW });
+  assert.deepEqual(none.cookies, []);
+  assert.deepEqual(none.expired.map(x => x.value), ['SECRET-expired'], 'still reported when no live copy exists');
+});
+
+test('a relative --out is written where the command was typed, not in the package folder', () => {
+  const f = fixture();
+  try {
+    const r = run(['--site', 'docs.example.com', '--out', 'docs.cookie'], f.dataPath, { cwd: f.dir });
+    assert.equal(r.code, 0, r.err);
+    assert.equal(existsSync(join(f.dir, 'docs.cookie')), true);
+  } finally { f.done(); }
+});

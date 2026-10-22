@@ -21,6 +21,6 @@ export function readSettings(env = process.env, warn = console.warn) {
   return {
     port: intSetting(env, 'PORT', 3888, { min: 0, max: 65535 }, warn),
     maxConcurrentRuns: intSetting(env, 'POCKET_SCRAPER_MAX_CONCURRENT', 2, { min: 1 }, warn),
-    runTimeoutMs: intSetting(env, 'POCKET_SCRAPER_RUN_TIMEOUT_MS', 180_000, { min: 500 }, warn)
+    runTimeoutMs: intSetting(env, 'POCKET_SCRAPER_RUN_TIMEOUT_MS', 180_000, { min: 500, max: 2_147_483_647 }, warn) // setTimeout's limit
   };
 }
