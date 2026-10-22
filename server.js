@@ -5,14 +5,13 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadStore, saveStore, normalizeRecipe, appendRun, addRecords } from './store.js';
 import { scrape } from './runner.js';
+import { readSettings } from './settings.js';
 import { sessionStatus, openSessionSetup, finishSessionSetup, sessionKey } from './browser-session.js';
 import { importTabCapture } from './capture.js';
 
-const PORT = Number(process.env.PORT || 3888);
+const { port: PORT, maxConcurrentRuns: MAX_CONCURRENT_RUNS, runTimeoutMs: RUN_TIMEOUT_MS } = readSettings();
 const HOST = '127.0.0.1'; // Deliberately inaccessible over LAN.
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const MAX_CONCURRENT_RUNS = Math.max(1, Number(process.env.POCKET_SCRAPER_MAX_CONCURRENT || 2));
-const RUN_TIMEOUT_MS = Math.max(500, Number(process.env.POCKET_SCRAPER_RUN_TIMEOUT_MS || 180_000));
 let store = loadStore();
 const running = new Set();
 let storageError = null;
@@ -53,13 +52,12 @@ async function run(recipe) {
   try {
     appendRun(store, runRecord);
     persist();
-    const output = await Promise.race([
-      scrape(recipe),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Run timed out after ${Math.round(RUN_TIMEOUT_MS / 1000)}s.`)), RUN_TIMEOUT_MS);
-        timer.unref?.();
-      })
-    ]);
+    // The scrape closes its browser when the deadline passes, so this slot is
+    // released only once the browser (and any session lock) is really gone.
+    const controller = new AbortController();
+    timer = setTimeout(() => controller.abort(new Error(`Run timed out after ${Math.round(RUN_TIMEOUT_MS / 1000)}s.`)), RUN_TIMEOUT_MS);
+    timer.unref?.();
+    const output = await scrape(recipe, { signal: controller.signal });
     runRecord.status = 'success';
     runRecord.rowCount = output.rows.length;
     runRecord.newCount = addRecords(store, recipe.id, output.rows, runRecord.id);

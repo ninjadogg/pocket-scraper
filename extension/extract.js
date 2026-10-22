@@ -38,13 +38,14 @@ export function extractFields(fields, expectedOrigin, rowSelector = '') {
       }
     }
   }
+  const emptyFields = [];
   if (rows.length && fields.length > 1) {
     for (const field of fields) {
-      if (rows.every(row => !row.fields[field.name])) {
-        warnings.push(`Selector health: field "${field.name}" (${field.selector}) was empty across all ${rows.length} record(s)`);
-      }
+      if (rows.every(row => !row.fields[field.name])) emptyFields.push({ name: field.name, selector: field.selector });
     }
   }
-  const output = { pageUrl: location.href, rows, warnings };
+  // Health warnings come first and the total stays within the 30 a tab capture accepts.
+  const health = emptyFields.map(f => `Selector health: field "${f.name}" (${f.selector}) was empty across all ${rows.length} record(s)`);
+  const output = { pageUrl: location.href, rows, warnings: [...health, ...warnings].slice(0, 30), emptyFields };
   return serialize ? JSON.stringify(output) : output;
 }
