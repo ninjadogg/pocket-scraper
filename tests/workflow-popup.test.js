@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { browserOptions } from '../browser-session.js';
 
 test('popup configures, reorders, saves, and reloads a workflow', async () => {
-  const browser = await chromium.launch({ headless: true,
-    ...(process.env.SCRAPER_BROWSER_PATH ? { executablePath: process.env.SCRAPER_BROWSER_PATH } : {}) });
+  const browser = await chromium.launch({ headless: true, ...browserOptions() });
   try {
     const page = await browser.newPage();
     await page.addInitScript(() => {

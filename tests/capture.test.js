@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { chromium } from 'playwright';
+import { browserOptions } from '../browser-session.js';
 import { captureFields } from '../extension/capture.js';
 
 const root = new URL('../', import.meta.url);
@@ -24,7 +25,7 @@ test('tab extraction saves through API, deduplicates, and is readable over Claud
     const recipe = await (await post('/api/recipes', { name: 'Release notes', url: 'https://example.org/releases', fields: [
       { name: 'release', selector: 'h3', kind: 'text' }, { name: 'notes', selector: '.notes', kind: 'text' }, { name: 'link', selector: 'a', kind: 'href' }
     ] })).json();
-    browser = await chromium.launch({ headless: true, ...(process.env.SCRAPER_BROWSER_PATH ? { executablePath: process.env.SCRAPER_BROWSER_PATH } : {}) });
+    browser = await chromium.launch({ headless: true, ...browserOptions() });
     const page = await browser.newPage();
     await page.route('https://example.org/**', route => route.fulfill({ contentType: 'text/html', body: '<h3>October release</h3><div class="notes">New feature text</div><a href="/details">Details</a>' }));
     await page.goto('https://example.org/releases');

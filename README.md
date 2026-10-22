@@ -25,7 +25,7 @@ Open **http://127.0.0.1:3888** to see results. Expand **Connect the Chrome exten
 2. Click **Load unpacked**, then choose this project's **`extension/`** folder.
 3. Open a website to collect. Click the Pocket Scraper extension icon (pin it for easy access).
 4. Use **Pick record container** to select one repeated card, list item, or table row, then pick fields inside that container. Give the recipe a name. Type a field name, e.g. `title`, choose **Text** or **Link**, click **Pick field**, and then click the matching element on the actual webpage. Reopen the extension to add additional fields.
-5. For navigation, **Record click** selects a button to click before extraction. **Pick Next** selects a next-page link and defaults the cap to 5 pages (requires URL-changing pagination). Review or edit the generated CSS selectors in the popup.
+5. For navigation, **Record click** selects a button to click before extraction. **Pick Next** selects a next-page link or "Load more" button and defaults the cap to 5 pages (supports both URL-changing and in-place AJAX pagination: after each click it waits up to 20 seconds for the records to change, and stops when they don't). Review or edit the generated CSS selectors in the popup.
 6. Choose a schedule and click **Save & run now**. Check results in the dashboard.
 
 **Record association:** With a record container, each matching container produces one row. Missing fields stay blank in that record; multiple matches within one field are joined with newlines. Field selectors are relative to the container. Legacy recipes without a container reject unequal field counts; equal counts produce a warning because they cannot guarantee correct association. Re-pick fields after changing the record container.
@@ -34,7 +34,7 @@ Open **http://127.0.0.1:3888** to see results. Expand **Connect the Chrome exten
 
 Choose manual, 15 minutes, hourly, 6-hourly, daily, or weekly. The scheduler runs inside `npm start`, so keep it running. A job's next due time is persisted. If the app was closed, the next due job runs after restart. Schedules are approximate, not exact wall-clock cron expressions.
 
-For unattended operation on macOS, you can run `npm start` via `launchd`, a terminal multiplexer, or another process manager. There's no cloud dependency.
+For unattended operation on macOS, install the user LaunchAgent with `npm run launchd -- --install` (inspect with `npm run launchd -- --status`, remove with `npm run launchd -- --uninstall`), or use another process manager. The LaunchAgent keeps `PATH`, `PORT`, `POCKET_SCRAPER_DATA`, `SCRAPER_BROWSER_PATH` and the run limits from the shell you install it from; `POCKET_SCRAPER_TOKEN` is never written to the plist (the server reuses the key saved in `.api-auth.json`). Rerun `--install` after changing any of them. There's no cloud dependency.
 
 ## Data and APIs
 
@@ -63,8 +63,8 @@ Tools exposed: `list_scraper_recipes`, `read_scraped_records`, `read_scraper_run
 
 ## Limitations / next step
 
-- This MVP does not automatically solve CAPTCHAs or bot-blocking, and does not handle scrolling, infinite scroll, `iframe` elements, automatic detection of the end of in-place pagination. Multi-step workflows can replay a fixed number of in-place updates.
-- CSS selectors are deterministic but **fragile when websites redesign**. Watch zero-match warnings and run failures in the dashboard.
+- This MVP does not automatically solve CAPTCHAs or bot-blocking, and does not handle scrolling, infinite scroll, or `iframe` elements. In-place "Load more" / AJAX pagination via **Pick Next** stops when a click doesn't change the records within 20 seconds, and multi-step workflows can replay custom click/wait sequences.
+- CSS selectors are deterministic but **fragile when websites redesign**. Watch per-field selector health warnings, zero-match warnings, and run failures in the dashboard.
 - Runs use a fresh browser until you enable saved sessions through dashboard session setup. Saved sessions reuse a dedicated profile; your everyday Chrome profile is never used.
 - Historical data is a simple JSON store; for hundreds of sources or millions of records, replace storage with SQLite/PostgreSQL and add per-site throttling/queues.
 - Only collect data you are permitted to access and respect site rate limits and applicable restrictions.
@@ -133,8 +133,10 @@ Example Claude request: “Read the saved Action1 Release Notes in Pocket Scrape
 
 In the dashboard, click **Open session setup** beside a saved recipe. This opens a
 separate browser profile for that website. Sign in or complete verification there,
-then click **Finish setup** in the dashboard before closing the browser yourself.
-This closes the browser and saves its session, including cookies without an expiry.
+then click **Finish setup** in the dashboard, or simply close the setup window.
+Either way the session is saved, including cookies without an expiry: while setup is
+open, cookies are also saved after each page load and every 30 seconds, and closing
+the last setup window saves them once more and releases the profile.
 **Run now** and interval jobs now reuse that session in headless mode. The profile
 survives server restarts; keep `npm start` running for scheduled collection.
 Recipes on the same origin share a profile and cannot use it simultaneously.
@@ -156,7 +158,8 @@ Profiles and session cookies stay under `data/browser-profiles/` (or alongside
 `POCKET_SCRAPER_DATA`). On Unix, profile directories and saved cookie files use owner-only permissions.
 On Windows, keep the folder under your private user profile and restrict its
 Windows folder permissions; Unix permission modes do not set Windows ACLs. Treat them as sign-in credentials: exclude them from
-source control and sharing. They are not returned by the API or MCP. No cookies are
+source control and sharing. They are not returned by the API or MCP; they leave the
+data folder only when you run `npm run export-cookies` yourself (see below). No cookies are
 read from the user's normal browser profile. Use the same browser installation
 for setup and unattended execution.
 
@@ -168,6 +171,91 @@ fingerprint flag. Session setup uses the same identity as unattended runs. This
 requires no Python, external service, AI, or cookie export from everyday Chrome.
 It improves compatibility with sites that reject the default automated-browser
 identity, but does not solve interactive challenges or guarantee future access.
+
+## Use a saved login in other tools
+
+`npm run export-cookies` hands a login saved through session setup to another tool
+as a Cookie header. It runs locally, needs no server, and never prints cookie values
+to the terminal: values go only to the file named by `--out` (written atomically,
+owner-only `600`) or to standard output when you pass `--stdout`. Its summary on
+stderr lists cookie names, counts, the earliest expiry and warnings.
+
+**ISTAR (.env / Easypanel)** — one command writes one `VAR=<Cookie header>` line per
+variable. ISTAR's login-gated sources read `SCRAPER_CONNECTWISE_AUTHTOKEN` for
+`docs.connectwise.com` and `RADAR_AUTH_<VENDOR>` for the rest: `RADAR_AUTH_CROWDSTRIKE`
+(falcon.crowdstrike.com), `RADAR_AUTH_COHESITY` (docs.cohesity.com),
+`RADAR_AUTH_FORTYTWOGEARS` (community.42gears.com), `RADAR_AUTH_MOSYLE`
+(mybusiness.mosyle.com), `RADAR_AUTH_RUBRIK` (docs.rubrik.com).
+
+```bash
+npm run export-cookies -- \
+  --env SCRAPER_CONNECTWISE_AUTHTOKEN=https://docs.connectwise.com@authtoken \
+  --env RADAR_AUTH_MOSYLE=https://mybusiness.mosyle.com \
+  --out radar.env
+# Later, refresh just those variables inside an existing .env, keeping every other line:
+npm run export-cookies -- --env RADAR_AUTH_MOSYLE=https://mybusiness.mosyle.com --out .env --merge
+```
+
+- `VAR=<url-or-host>@name1,name2` exports only those cookies (`--only name1,name2`
+  with `--site`). If a named cookie is missing or expired, or any site has no
+  cookies, **nothing is written** and the command exits 2, so a half-updated `.env`
+  never ships.
+- `SCRAPER_CONNECTWISE_AUTHTOKEN` always holds the bare `authtoken` value (the
+  MindTouch JWT), because ISTAR's `scraper_worker` adds `authtoken=` itself. Every
+  other variable holds a full header such as `RADAR_AUTH_MOSYLE=sid=abc; pref=1`.
+- Lines are written unquoted. Docker compose `.env` rules, Node's and Python's dotenv
+  parsers and `docker run --env-file` all read such a line back unchanged (tested);
+  Easypanel's Environment box uses the same `KEY=value` format. A cookie value
+  containing `#`, `$`, `"`, `'`, `` ` `` or `\` would be changed by some of those parsers,
+  so the export refuses it (naming the cookie) rather than write a broken line.
+- `--out` never replaces an existing file unless you pass `--merge` (env output:
+  replace only the named variables in place, append missing ones, keep the file's
+  mode but never looser than `600`) or `--force` (replace the whole file). It refuses
+  symbolic links and files owned by another user.
+- In docker compose, a project `.env` only fills `${VAR}` references; the service must
+  list the variable under `environment:` (as ISTAR does for `SCRAPER_CONNECTWISE_AUTHTOKEN`)
+  or load the file with `env_file:`. In Easypanel, paste the lines into the service's
+  Environment settings.
+
+**Release radar** — a raw header file (`a=b; c=d`, no `Cookie:` prefix) for
+`safari_session.py fetch --cookie-header`:
+
+```bash
+npm run export-cookies -- --site https://docs.connectwise.com --out connectwise.cookie
+python3 scripts/safari_session.py fetch --run 2026-10-19 --cookie-header connectwise.cookie \
+  --url https://docs.connectwise.com/... --id cw_automate
+```
+
+**Playwright-based tools** — a storage state for `browser.newContext({ storageState })`:
+
+```bash
+npm run export-cookies -- --site https://docs.rubrik.com --format storage-state --out rubrik.storage-state.json
+```
+
+A single env line also works without `--env`:
+`npm run export-cookies -- --site https://docs.rubrik.com --format env --var RADAR_AUTH_RUBRIK --out rubrik.cookies.env`.
+
+**See what is saved** — `npm run export-cookies -- --list` shows each saved session:
+the domains its cookies cover, cookie and expired counts, the earliest expiry,
+whether session-only cookies are present and when it was saved. No values.
+
+Selection follows browser rules: a cookie is exported when its domain is the host
+(or a parent domain it was set on), its path is a prefix of the URL's path (default
+`/`), it is not expired, and, if `Secure`, the URL is `https`. All saved sessions
+are searched, since a single sign-on cookie may come from another recipe's login; if
+the same cookie is saved in several, the most recently saved wins and the summary
+says so. Exported files (`*.cookie`, `*.cookies.env`, `*.storage-state.json`,
+`radar.env`, `.env`) are git-ignored here. Warnings flag expired cookies,
+session-only cookies (they end when the site ends that login session) and exports wider than the site itself (cookies from
+a parent domain such as `.connectwise.com`, or more than 10 cookies); use `--only`
+to narrow those.
+
+> **Risks.** An exported cookie is a live login: whoever holds it is signed in as
+> that account, with no password or two-factor prompt, until it expires.
+> Anyone who can read where you put it (a shared server's environment settings) can act as that account.
+> For shared deployments, prefer a dedicated vendor account over your own.
+> Store it as a secret and never commit it; re-export when the login expires.
+> To revoke it, sign out of that session on the website or change the password.
 
 ## Distribution packages
 
@@ -229,7 +317,10 @@ verification when a website requests it.
 
 The automated tests and packaging run on Windows, macOS and Linux. Manual
 installation and startup configuration must still be checked on your own machine.
-This beta has no global concurrency limit, overall run deadline, automatic data
+Concurrent runs default to 2 (`POCKET_SCRAPER_MAX_CONCURRENT`, at least 1) with a 3-minute
+per-run deadline (`POCKET_SCRAPER_RUN_TIMEOUT_MS`, in milliseconds, 500 to 2147483647); a run that
+reaches the deadline is stopped and its browser closed. These and `PORT` must be whole
+numbers: any other value prints a warning and the default is used. This beta has no automatic data
 retention or damaged-store recovery. Use a small number of trusted recipes and
 back up your private data directory.
 

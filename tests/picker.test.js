@@ -4,6 +4,7 @@ import { chromium } from 'playwright';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { browserOptions } from '../browser-session.js';
 import { installPicker } from '../extension/picker.js';
 
 const fixture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixture.html'), 'utf8');
@@ -11,7 +12,7 @@ const fixture = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixt
 test('Visual picker builds a reusable selector from a clicked element', async () => {
   const browser = await chromium.launch({
     headless: true,
-    ...(process.env.SCRAPER_BROWSER_PATH ? { executablePath: process.env.SCRAPER_BROWSER_PATH } : {})
+    ...browserOptions()
   });
   try {
     const page = await browser.newPage();

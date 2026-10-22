@@ -7,12 +7,12 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-manifest = json.loads((ROOT / 'extension/manifest.json').read_text())
+manifest = json.loads((ROOT / 'extension/manifest.json').read_text(encoding='utf-8'))
 version = manifest['version']
 assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid release version'
 assert manifest['manifest_version'] == 3
-assert json.loads((ROOT / 'package.json').read_text())['version'] == version
-lock = json.loads((ROOT / 'package-lock.json').read_text())
+assert json.loads((ROOT / 'package.json').read_text(encoding='utf-8'))['version'] == version
+lock = json.loads((ROOT / 'package-lock.json').read_text(encoding='utf-8'))
 assert lock['version'] == lock['packages']['']['version'] == version
 EXT = ['manifest.json', 'background.js', 'api.js', 'extract.js', 'capture.js', 'picker.js', 'popup.js', 'popup.html']
 EXT += [f'icons/icon-{size}.png' for size in [16, 32, 48, 128]]
@@ -22,15 +22,23 @@ for name in EXT:
     source = ROOT / 'extension' / name
     assert source.is_file() and not source.is_symlink(), f'Invalid file: {source}'
     if name.endswith(('.js', '.html')):
-        for ref in re.findall(r'''(?:from\s+|src=)["']([^"']+)["']''', source.read_text()):
+        for ref in re.findall(r'''(?:from\s+|src=)["']([^"']+)["']''', source.read_text(encoding='utf-8')):
             assert ref.removeprefix('./') in EXT, f'Unpackaged dependency: {ref}'
 SERVER = ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'SECURITY.md', 'server.js', 'runner.js',
-          'auth.js', 'browser-session.js', 'store.js', 'capture.js', 'mcp.js', 'dashboard.html',
-          'scripts/package-release.py', 'scripts/package-release.js', 'distribution/INSTALL.md',
+          'auth.js', 'browser-session.js', 'session-paths.js', 'settings.js', 'export-cookies.js', 'store.js',
+          'capture.js', 'mcp.js', 'dashboard.html',
+          'scripts/launchd.js', 'scripts/package-release.py', 'scripts/package-release.js', 'distribution/INSTALL.md',
           'distribution/PRIVACY.md', 'distribution/PUBLISHING.md']
 SERVER += ['tests/' + name for name in ['fixture.html', 'adversarial.test.js', 'capture.test.js', 'picker.test.js',
-           'scraper.test.js', 'session.test.js', 'session-api.test.js', 'workflow-popup.test.js']]
+           'scraper.test.js', 'session.test.js', 'session-api.test.js', 'workflow-popup.test.js',
+           'export-cookies.test.js', 'session-setup-close.test.js', 'settings.test.js', 'launchd.test.js',
+           'fixtures/no-playwright.mjs']]
 SERVER += ['extension/' + name for name in EXT]
+for name in SERVER:
+    if name.endswith(('.js', '.mjs')):
+        for ref in re.findall(r'''from\s+["'](\.{1,2}/[^"']+)["']''', (ROOT / name).read_text(encoding='utf-8')):
+            dep = (ROOT / name).parent.joinpath(ref).resolve().relative_to(ROOT).as_posix()
+            assert dep in SERVER, f'Unpackaged dependency of {name}: {ref}'
 OUT = ROOT / 'dist'
 OUT.mkdir(exist_ok=True)
 
