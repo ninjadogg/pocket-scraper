@@ -11,6 +11,8 @@ import { importTabCapture } from './capture.js';
 const PORT = Number(process.env.PORT || 3888);
 const HOST = '127.0.0.1'; // Deliberately inaccessible over LAN.
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const MAX_CONCURRENT_RUNS = Math.max(1, Number(process.env.POCKET_SCRAPER_MAX_CONCURRENT || 2));
+const RUN_TIMEOUT_MS = Math.max(500, Number(process.env.POCKET_SCRAPER_RUN_TIMEOUT_MS || 180_000));
 let store = loadStore();
 const running = new Set();
 let storageError = null;
@@ -43,13 +45,21 @@ async function body(req, limit = 250_000) {
 
 async function run(recipe) {
   if (running.has(recipe.id)) return { queued: false, message: 'Already running' };
+  if (running.size >= MAX_CONCURRENT_RUNS) return { queued: false, message: 'Max concurrent runs reached' };
   if (recipe.useBrowserSession && sessionStatus(recipe).busy) return { queued: false, message: 'Website session is busy' };
   running.add(recipe.id);
   const runRecord = { id: crypto.randomUUID(), recipeId: recipe.id, startedAt: new Date().toISOString(), status: 'running' };
+  let timer;
   try {
     appendRun(store, runRecord);
     persist();
-    const output = await scrape(recipe);
+    const output = await Promise.race([
+      scrape(recipe),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Run timed out after ${Math.round(RUN_TIMEOUT_MS / 1000)}s.`)), RUN_TIMEOUT_MS);
+        timer.unref?.();
+      })
+    ]);
     runRecord.status = 'success';
     runRecord.rowCount = output.rows.length;
     runRecord.newCount = addRecords(store, recipe.id, output.rows, runRecord.id);
@@ -62,6 +72,7 @@ async function run(recipe) {
     runRecord.error = error.message;
     console.error(`[${recipe.name}] ${error.stack || error}`);
   } finally {
+    clearTimeout(timer);
     runRecord.finishedAt = new Date().toISOString();
     // Respect any schedule changes made while this run was executing.
     const latest = store.recipes.find(r => r.id === recipe.id);
@@ -174,6 +185,7 @@ const server = http.createServer(async (req, res) => {
       const id = p.slice('/api/run/'.length);
       const recipe = store.recipes.find(r => r.id === id);
       if (!recipe) return send(res, 404, { error: 'Unknown recipe' });
+      if (running.size >= MAX_CONCURRENT_RUNS) return send(res, 409, { error: 'Too many runs in progress. Wait for a current run to finish.' });
       if (recipe.useBrowserSession && sessionStatus(recipe).busy) return send(res, 409, { error: 'Website session is busy. Finish setup or wait for the current run.' });
       if (recipe.sessionNeedsAttention) return send(res, 409, { error: 'Complete session setup and click Finish setup before retrying.' });
       // Respond immediately; run status is visible in /api/runs.
@@ -205,6 +217,7 @@ const server = http.createServer(async (req, res) => {
 setInterval(() => {
   const now = Date.now();
   for (const recipe of store.recipes) {
+    if (running.size >= MAX_CONCURRENT_RUNS) break;
     if (!recipe.sessionNeedsAttention && !(recipe.useBrowserSession && sessionStatus(recipe).busy) && recipe.scheduleMinutes && recipe.nextRunAt && Date.parse(recipe.nextRunAt) <= now && !running.has(recipe.id)) {
       recipe.nextRunAt = new Date(now + recipe.scheduleMinutes * 60_000).toISOString();
       try { persist(); } catch (error) { console.error('Scheduler persistence failed:', error.message); continue; }

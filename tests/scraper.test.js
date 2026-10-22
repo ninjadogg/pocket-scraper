@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scrape } from '../runner.js';
 import { defaultStore, normalizeRecipe, addRecords } from '../store.js';
+import { renderPlist, runLaunchdCli } from '../scripts/launchd.js';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const fixture = readFileSync(join(root, 'fixture.html'), 'utf8');
@@ -79,4 +81,84 @@ test('HTTP access failures explain why extraction cannot run', async () => {
     const recipe = normalizeRecipe({ name: 'Denied', url: `http://127.0.0.1:${server.address().port}`, fields: [{ name: 'title', selector: 'h3' }] });
     await assert.rejects(scrape(recipe), /HTTP 403.*separate from your Chrome tab/);
   } finally { await new Promise(resolve => server.close(resolve)); }
+});
+
+test('selector health warns when one field in a multi-field recipe is empty across all cards', async () => {
+  const recipe = normalizeRecipe({
+    name: 'Drifted field',
+    url: 'https://example.org',
+    rowSelector: 'li',
+    fields: [
+      { name: 'title', selector: 'a.job', kind: 'text' },
+      { name: 'salary', selector: '.missing-salary', kind: 'text' }
+    ]
+  });
+  const { rows, warnings } = await scrape(recipe, { fixtureHtml: fixture });
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].fields.title, 'Research Analyst');
+  assert.equal(rows[0].fields.salary, '');
+  assert.deepEqual(warnings, [
+    'Page 1: Record 1: no matches for salary',
+    'Page 1: Record 2: no matches for salary',
+    'Page 1: Selector health: field "salary" (.missing-salary) was empty across all 2 record(s)'
+  ]);
+});
+
+test('in-place AJAX nextSelector pagination deduplicates seen rows and stops when no new records load', async () => {
+  const ajaxHtml = `
+    <ul id="items"><li class="card"><span class="name">Item 1</span></li></ul>
+    <button id="load-more" onclick="
+      window.clicks = (window.clicks || 0) + 1;
+      if (window.clicks === 1) {
+        const li = document.createElement('li');
+        li.className = 'card';
+        li.innerHTML = '<span class=\\'name\\'>Item 2</span>';
+        document.getElementById('items').appendChild(li);
+      }
+    ">Load More</button>
+  `;
+  const recipe = normalizeRecipe({
+    name: 'AJAX Load More',
+    url: 'https://example.org',
+    rowSelector: 'li.card',
+    fields: [{ name: 'name', selector: '.name', kind: 'text' }],
+    nextSelector: '#load-more',
+    maxPages: 5
+  });
+  const { rows, warnings } = await scrape(recipe, { fixtureHtml: ajaxHtml });
+  assert.deepEqual(rows.map(r => r.fields.name), ['Item 1', 'Item 2']);
+  assert.deepEqual(warnings, ['Next button did not load new records; stopping pagination.']);
+});
+
+test('macOS launchd helper renders escaped plist XML and supports write/install/uninstall/status', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pocket-launchd-'));
+  try {
+    const plistPath = join(dir, 'com.pocketscraper.server.plist');
+    const calls = [];
+    const execLaunchctl = args => { calls.push(args); return { status: 0, stdout: '', stderr: '' }; };
+
+    const xml = renderPlist({
+      label: 'com.pocketscraper.server',
+      nodePath: '/opt/homebrew/bin/node',
+      workingDirectory: '/Users/test/pocket & scraper',
+      logDir: join(dir, 'logs'),
+      env: { PATH: '/opt/homebrew/bin:/usr/bin', POCKET_SCRAPER_DATA: '/Users/test/data/store.json' }
+    });
+    assert.match(xml, /<string>com\.pocketscraper\.server<\/string>/);
+    assert.match(xml, /pocket &amp; scraper/);
+    assert.match(xml, /POCKET_SCRAPER_DATA/);
+
+    runLaunchdCli(['--install', '--out', plistPath], { uid: 501, workingDirectory: dir, execLaunchctl, stderr: () => {} });
+    assert.equal(existsSync(plistPath), true);
+    assert.match(readFileSync(plistPath, 'utf8'), /com\.pocketscraper\.server/);
+    assert.deepEqual(calls.map(c => c[0]), ['bootout', 'bootstrap']);
+
+    const statusRes = runLaunchdCli(['--status', '--out', plistPath], { uid: 501, workingDirectory: dir, execLaunchctl, stdout: () => {} });
+    assert.equal(statusRes.loaded, true);
+
+    runLaunchdCli(['--uninstall', '--out', plistPath], { uid: 501, workingDirectory: dir, execLaunchctl, stderr: () => {} });
+    assert.equal(existsSync(plistPath), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

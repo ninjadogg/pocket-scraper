@@ -26,7 +26,7 @@ for name in EXT:
             assert ref.removeprefix('./') in EXT, f'Unpackaged dependency: {ref}'
 SERVER = ['package.json', 'package-lock.json', 'README.md', 'LICENSE', 'SECURITY.md', 'server.js', 'runner.js',
           'auth.js', 'browser-session.js', 'export-cookies.js', 'store.js', 'capture.js', 'mcp.js', 'dashboard.html',
-          'scripts/package-release.py', 'scripts/package-release.js', 'distribution/INSTALL.md',
+          'scripts/launchd.js', 'scripts/package-release.py', 'scripts/package-release.js', 'distribution/INSTALL.md',
           'distribution/PRIVACY.md', 'distribution/PUBLISHING.md']
 SERVER += ['tests/' + name for name in ['fixture.html', 'adversarial.test.js', 'capture.test.js', 'picker.test.js',
            'scraper.test.js', 'session.test.js', 'session-api.test.js', 'workflow-popup.test.js',

@@ -38,6 +38,13 @@ export function extractFields(fields, expectedOrigin, rowSelector = '') {
       }
     }
   }
+  if (rows.length && fields.length > 1) {
+    for (const field of fields) {
+      if (rows.every(row => !row.fields[field.name])) {
+        warnings.push(`Selector health: field "${field.name}" (${field.selector}) was empty across all ${rows.length} record(s)`);
+      }
+    }
+  }
   const output = { pageUrl: location.href, rows, warnings };
   return serialize ? JSON.stringify(output) : output;
 }
